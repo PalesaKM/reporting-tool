@@ -1,0 +1,749 @@
+{% extends "base.html" %}
+{% load widget_tweaks %}
+
+{% block content %}
+<div class="container mx-auto p-4">
+    <h1 class="text-3xl font-bold mb-6 text-gray-800">Edit Report #{{ report.pk }} (Week {{ report.week_number }})</h1>
+
+    <div class="bg-white shadow-2xl rounded-xl p-8 mb-8 border-t-8 border-indigo-600">
+        <form method="post" id="report-form" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            <div class="mb-8">
+                <h3 class="text-xl font-bold text-gray-700 border-b pb-2 mb-4">Report Details</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {% for field in report_form %}
+                        <div class="mb-2">
+                            <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-gray-700">
+                                {{ field.label }}
+                            </label>
+                            {% render_field field class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder=field.label %}
+                            {% if field.errors %}
+                                <div class="text-red-500 text-xs mt-1">{{ field.errors.as_text }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="mb-6">
+                <h3 class="text-xl font-bold text-gray-700 border-b pb-2 mb-4">Weekly Content Entries</h3>
+                {{ formset.management_form }}
+                
+                <div id="formset-container" class="space-y-4">
+                    {% for form in formset %}
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-5 formset-item" data-form-index="{{ forloop.counter0 }}">
+                            
+                            {% for hidden in form.hidden_fields %}
+                                {% if hidden.name != form.DELETE.name %}
+                                    {{ hidden }}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if formset.can_delete %}
+                                {% render_field form.DELETE type="hidden" %}
+                            {% endif %}
+
+                            <div class="grid grid-cols-1 gap-4">
+                                {% for field in form.visible_fields %}
+                                    <div>
+                                        <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-gray-700">
+                                            {{ field.label }}
+                                        </label>
+                                        
+                                        {% if field.name == 'entry' %}
+                                            {% render_field field class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 tinymce-editor" placeholder=field.label %}
+                                        {% else %}
+                                            {% render_field field class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder=field.label %}
+                                        {% endif %}
+                                        
+                                        {% if field.errors %}
+                                            <div class="text-red-500 text-xs mt-1">{{ field.errors.as_text }}</div>
+                                        {% endif %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+
+                            {% if formset.can_delete %}
+                                <div class="mt-4 text-right">
+                                    <button type="button" class="remove-form-btn text-red-600 hover:text-red-800 text-sm font-medium transition duration-150 p-2 rounded-md hover:bg-red-50">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline mr-1 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                        Remove Entry
+                                    </button>
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <button type="button" class="w-full mt-4 flex items-center justify-center space-x-2 px-4 py-2 border border-indigo-200 text-indigo-700 text-sm font-medium rounded-lg bg-indigo-50 hover:bg-indigo-100 transition duration-150 shadow-sm" id="add-item-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+                    </svg>
+                    <span>Add Another Content Entry</span>
+                </button>
+            </div>
+            
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                </div>
+            
+            {% if formset.non_form_errors %}
+                <div class="p-3 mb-4 text-sm text-red-700 bg-red-100 rounded-lg">
+                    <strong class="font-bold">Formset Error:</strong> {{ formset.non_form_errors }}
+                </div>
+            {% endif %}
+
+            <div class="flex justify-end space-x-4 pt-6 border-t">
+                <button type="submit" name="action" value="draft" class="px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                    Save as Draft
+                </button>
+                <button type="submit" name="action" value="submit" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300">
+                    Submit Final Report
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="empty-form-template" class="hidden">
+    </div>
+
+<div class="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                    
+                    <!-- Step 1: File Upload -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-semibold text-indigo-700 mb-2">1. Upload Excel/CSV File</label>
+                        <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" 
+                                onchange="handleFileChange(event)"
+                                class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 p-2.5">
+                        <p class="text-xs text-gray-500 mt-1">Supported formats: .xlsx, .xls, .csv (Max size 10MB)</p>
+                    </div>
+
+                    <!-- Step 2: Sheet Selection -->
+                    <div id="sheet-selection-area" class="hidden mb-6 p-4 border border-indigo-200 rounded-lg bg-indigo-50 shadow-inner">
+                        <label for="sheet-selector" class="block text-sm font-semibold text-indigo-700 mb-2">2. Select Sheet</label>
+                        <select id="sheet-selector" onchange="updateChart()"
+                                class="mt-1 block w-full rounded-md border-indigo-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border">
+                            <!-- Options populated by JS -->
+                        </select>
+                    </div>
+
+                    <!-- Step 3: Chart Generation -->
+                    <div id="chart-area" class="hidden p-4 border border-green-200 rounded-lg bg-green-50 shadow-inner">
+                        <label class="block text-sm font-semibold text-green-700 mb-4">3. Configure and View Chart</label>
+                        
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                            <!-- Chart Title Input -->
+                            <div>
+                                <label for="chart-title" class="block text-xs font-medium text-gray-500">Chart Title</label>
+                                <input type="text" id="chart-title" value="Report Data Visualization" oninput="updateChart()"
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm p-2 border">
+                            </div>
+                            <!-- Chart Type Selector -->
+                            <div>
+                                <label for="chart-type" class="block text-xs font-medium text-gray-500">Chart Type</label>
+                                <select id="chart-type" onchange="updateChart()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm p-2 border">
+                                    <option value="bar">Bar Chart</option>
+                                    <option value="line">Line Chart</option>
+                                    <option value="pie">Pie Chart</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Chart Canvas (where chart is drawn) -->
+                        <div class="bg-white p-4 rounded-lg border my-4 shadow-md">
+                            <canvas id="data-chart" width="400" height="200"></canvas>
+                            <p id="chart-message" class="text-center text-sm text-red-500 mt-2 hidden font-medium">
+                                Data cannot be charted. Ensure the first column contains labels and subsequent columns contain numeric data.
+                            </p>
+                        </div>
+                        
+                        <!-- Insert Button (Placeholder/Future Integration) -->
+                        <button type="button" id="insert-chart-btn" onclick="insertChart()"
+                                class="w-full px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition duration-300 disabled:opacity-50" disabled>
+                            Insert Chart Image into Report
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+<script>
+        let workbook = null; // Stores the parsed Excel workbook
+        let currentChart = null; // Stores the active Chart.js instance
+        let currentData = null; // Stores the currently selected sheet data (array of arrays)
+
+        // Utility to display messages instead of using alert()
+        function displayStatus(content, isError = false) {
+            const chartMessage = document.getElementById('chart-message');
+            chartMessage.textContent = content;
+            chartMessage.classList.remove('hidden', 'text-red-500', 'text-gray-700');
+            chartMessage.classList.add(isError ? 'text-red-500' : 'text-gray-700');
+            if (!content) chartMessage.classList.add('hidden');
+        }
+
+        // --- Step 1 Handler: Read File ---
+        function handleFileChange(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Simple validation
+            const fileName = file.name.toLowerCase();
+            if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) {
+                displayStatus('Invalid file type. Please select an Excel or CSV file.', true);
+                resetUI();
+                return;
+            }
+
+            // FileReader to read the file content
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                try {
+                    workbook = XLSX.read(data, { type: 'array' });
+                    populateSheets(workbook);
+                } catch (error) {
+                    console.error("Error parsing file:", error);
+                    displayStatus('Error reading file. Ensure it is not corrupted.', true);
+                    resetUI();
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- Step 2 Handler: Populate Sheet Selector ---
+        function populateSheets(wb) {
+            const sheetSelector = document.getElementById('sheet-selector');
+            sheetSelector.innerHTML = '';
+            
+            if (wb.SheetNames.length === 0) {
+                displayStatus('No sheets found in the file.', true);
+                resetUI();
+                return;
+            }
+
+            wb.SheetNames.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                sheetSelector.appendChild(option);
+            });
+            
+            document.getElementById('sheet-selection-area').classList.remove('hidden');
+            document.getElementById('chart-area').classList.remove('hidden');
+            updateChart(); // Automatically draw chart for the first sheet
+        }
+
+        // --- Step 3 Handler: Prepare and Draw Chart ---
+        function updateChart() {
+            if (!workbook) return;
+
+            const sheetName = document.getElementById('sheet-selector').value;
+            const worksheet = workbook.Sheets[sheetName];
+            if (!worksheet) return;
+
+            // Convert sheet to array of arrays
+            currentData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (currentData.length < 2) {
+                displayStatus('Selected sheet is empty or has insufficient data.', true);
+                return;
+            }
+
+            // Extract headers (labels) and numeric data (datasets)
+            const headers = currentData[0];
+            const labels = currentData.slice(1).map(row => row[0]); // First column is labels
+            
+            if (labels.length === 0) {
+                 displayStatus('Data cannot be charted. Ensure the first column contains labels.', true);
+                 return;
+            }
+
+            const datasets = [];
+            const backgroundColors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#06b6d4']; // Tailwind colors
+
+            // Iterate over all columns starting from the second (index 1)
+            for (let i = 1; i < headers.length; i++) {
+                // Collect numeric data for this series
+                const dataSeries = currentData.slice(1).map(row => parseFloat(row[i]));
+                
+                // Validate if any non-numeric data exists (except for the label column)
+                const hasInvalidData = dataSeries.some(isNaN);
+
+                if (!hasInvalidData) {
+                    datasets.push({
+                        label: headers[i] || `Series ${i}`,
+                        data: dataSeries,
+                        backgroundColor: backgroundColors[i % backgroundColors.length] + (document.getElementById('chart-type').value === 'bar' ? 'cc' : 'ff'), // Add opacity for bars
+                        borderColor: backgroundColors[i % backgroundColors.length],
+                        borderWidth: 1,
+                        fill: document.getElementById('chart-type').value === 'line' ? true : false,
+                        tension: 0.1 // Smooth lines
+                    });
+                }
+            }
+
+            // Check if we generated any valid datasets
+            if (datasets.length === 0) {
+                displayStatus('No valid numeric data columns found in the selected sheet.', true);
+                document.getElementById('insert-chart-btn').disabled = true;
+                if (currentChart) currentChart.destroy();
+                return;
+            }
+
+            displayStatus(''); // Clear status message
+            drawChart(labels, datasets);
+            document.getElementById('insert-chart-btn').disabled = false;
+        }
+
+        // Draws the chart using Chart.js
+        function drawChart(labels, datasets) {
+            const ctx = document.getElementById('data-chart').getContext('2d');
+            const chartType = document.getElementById('chart-type').value;
+            const chartTitle = document.getElementById('chart-title').value;
+
+            // Destroy existing chart instance if it exists
+            if (currentChart) {
+                currentChart.destroy();
+            }
+
+            // Configure options based on chart type
+            const options = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: chartTitle,
+                        font: { size: 18, family: 'Inter' }
+                    },
+                    legend: {
+                        display: chartType !== 'pie',
+                        position: 'bottom',
+                    }
+                },
+                // Hide X and Y axes for Pie charts
+                scales: chartType === 'pie' ? {} : {
+                    y: { beginAtZero: true },
+                    x: { ticks: { autoSkip: false, maxRotation: 45, minRotation: 0 } }
+                }
+            };
+
+            // Pie charts need a single dataset structure adjustment
+            if (chartType === 'pie' && datasets.length > 0) {
+                // Use the first data series for the pie chart
+                const pieDataset = datasets[0]; 
+                
+                currentChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: pieDataset.label,
+                            data: pieDataset.data,
+                            backgroundColor: datasets.flatMap(d => d.backgroundColor).slice(0, labels.length), // Use available colors
+                            borderColor: '#ffffff',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: options
+                });
+            } else {
+                // Bar and Line charts
+                currentChart = new Chart(ctx, {
+                    type: chartType,
+                    data: {
+                        labels: labels,
+                        datasets: datasets
+                    },
+                    options: options
+                });
+            }
+        }
+        
+        // --- Placeholder for Integration ---
+        function insertChart() {
+            if (!currentChart) {
+                displayStatus('No chart generated yet.', true);
+                return;
+            }
+            
+            // In a real application, you would convert the chart canvas to an image
+            // and insert the image data (base64 string) into a hidden field 
+            // of your main report submission form.
+            
+            const imageDataURL = currentChart.toBase64Image();
+            const focusedEditor = tinymce.get(tinymce.activeEditor.id);
+            if (focusedEditor) {
+                const html = `<p><img src="${imageDataURL}" alt="${document.getElementById('chart-title').value}" style="max-width: 100%; height: auto;"/></p>`;
+                focusedEditor.insertContent(html);
+                displayStatus(`Chart image inserted successfully into the report entry!`, false);
+            } else {
+        displayStatus('Error: No active report entry field is open. Click inside a report entry to enable insertion.', true);
+    }
+}
+            
+
+        // Reset the entire component state
+        function resetUI() {
+            document.getElementById('sheet-selector').innerHTML = '';
+            document.getElementById('sheet-selection-area').classList.add('hidden');
+            document.getElementById('chart-area').classList.add('hidden');
+            document.getElementById('insert-chart-btn').disabled = true;
+            if (currentChart) {
+                currentChart.destroy();
+                currentChart = null;
+            }
+            workbook = null;
+            currentData = null;
+        }
+
+        // Initialize state on load
+        document.addEventListener('DOMContentLoaded', () => {
+             // Set the canvas to be responsive
+            const canvas = document.getElementById('data-chart');
+            if (canvas) {
+                canvas.style.height = '400px'; 
+                
+           }
+             resetUI();
+            displayStatus('Please upload an Excel or CSV file to begin charting.', false);
+        });
+
+    </script>
+
+            <!-- Formset Errors -->
+            {% if formset.non_form_errors %}
+                <div class="p-3 mb-4 text-sm text-red-700 bg-red-100 rounded-lg">
+                    <strong class="font-bold">Formset Error:</strong> {{ formset.non_form_errors }}
+                </div>
+            {% endif %}
+
+            <!-- Submission Buttons -->
+            <div class="flex justify-end space-x-4 pt-6 border-t">
+                <button type="submit" name="action" value="draft" class="px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                    Save as Draft
+                </button>
+                <button type="submit" name="action" value="submit" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300">
+                    Submit Final Report
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Empty Form Template for JavaScript -->
+<div id="empty-form-template" class="hidden">
+    <div class="bg-gray-50 border border-gray-200 rounded-lg p-5 formset-item">
+        <!-- Render non-delete hidden fields for the empty form -->
+        {% for hidden in formset.empty_form.hidden_fields %}
+            {% if hidden.name != formset.empty_form.DELETE.name %}
+                {{ hidden }}
+            {% endif %}
+        {% endfor %}
+
+        <!-- Explicitly render the DELETE field for the empty form as a hidden input -->
+        {% if formset.can_delete %}
+            {% render_field formset.empty_form.DELETE type="hidden" %}
+        {% endif %}
+
+        <!-- Visible Fields -->
+        <div class="grid grid-cols-1 gap-4">
+            {% for field in formset.empty_form.visible_fields %}
+                <div>
+                    <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-gray-700">
+                        {{ field.label }}
+                    </label>
+                    <!-- CONDITIONAL RENDERING LOGIC for empty form template -->
+                    {% if field.name == 'entry' %}
+                        {% render_field field class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 tinymce-editor" placeholder=field.label %}
+                    {% else %}
+                        {% render_field field class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder=field.label %}
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Delete Button (Custom JS Handler) -->
+        {% if formset.can_delete %}
+            <div class="mt-4 text-right">
+                <button type="button" class="remove-form-btn text-red-600 hover:text-red-800 text-sm font-medium transition duration-150 p-2 rounded-md hover:bg-red-50">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline mr-1 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Remove Entry
+                </button>
+            </div>
+        {% endif %}
+    </div>
+</div>
+<script src="https://cdn.tiny.cloud/1/cyfyyzw2wbavsr8929yldrsjosspxv6l4934yyrq58g9w1qu/tinymce/7/tinymce.min.js" referrerpolicy="origin"></script>
+
+<script>
+    // ... all your existing JavaScript code (Chart.js, TinyMCE config, formset logic) ...
+    window.handleCalcInput = function(key) {
+        const display = document.getElementById('calc-display');
+        if (!display) return;
+        let current = display.value;
+        let isNewInput = current === '0' || current === 'Error';
+
+        if (key === 'C') {
+            display.value = '0';
+        } else if (key === 'Enter') {
+            try {
+                // Sanitize input before evaluation
+                const safeExpression = current.replace(/[^0-9+\-*/.]/g, ''); 
+                const result = String(eval(safeExpression)); 
+                display.value = result;
+            } catch (e) {
+                display.value = 'Error';
+            }
+        } else if (key === 'Backspace') {
+            if (current !== 'Error') {
+                display.value = current.length > 1 ? current.slice(0, -1) : '0';
+            } else {
+                display.value = '0';
+            }
+        } else if ('0123456789.'.includes(key)) {
+            if (isNewInput) {
+                display.value = key === '.' ? '0.' : key;
+            } else {
+                display.value += key;
+            }
+        } else if ('+-*/'.includes(key)) {
+            // Prevent duplicate operators at the end
+            if ('+-*/'.includes(current.slice(-1))) {
+                display.value = current.slice(0, -1) + key;
+            } else {
+                display.value += key;
+            }
+        }
+    };
+
+    /**
+     * Opens a custom TinyMCE dialog containing a basic calculator UI.
+     * @param {object} editor - The active TinyMCE editor instance.
+     */
+    function openCalculatorDialog(editor) {
+        const calculatorBody = {
+            type: 'htmlpanel',
+            html: `
+                <div class="p-2 border rounded-lg bg-gray-100 mb-3" id="calc-display-wrapper">
+                    <input id="calc-display" type="text" value="0" readonly 
+                           style="width:100%; text-align:right; font-size:1.25rem; font-family:monospace; background-color:white; border:none; padding: 0.5rem; border-radius: 0.375rem; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
+                </div>
+                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 4px;">
+                    <button class="tox-button" style="grid-column: span 1; background-color: #fca5a5; color: #b91c1c;" onclick="handleCalcInput('C')">C</button>
+                    <button class="tox-button" onclick="handleCalcInput('/')">/</button>
+                    <button class="tox-button" onclick="handleCalcInput('*')">*</button>
+                    <button class="tox-button" onclick="handleCalcInput('-')">-</button>
+
+                    <button class="tox-button" onclick="handleCalcInput('7')">7</button>
+                    <button class="tox-button" onclick="handleCalcInput('8')">8</button>
+                    <button class="tox-button" onclick="handleCalcInput('9')">9</button>
+                    <button class="tox-button" style="grid-row: span 2; background-color: #4f46e5; color: white;" onclick="handleCalcInput('+')">+</button>
+                    
+                    <button class="tox-button" onclick="handleCalcInput('4')">4</button>
+                    <button class="tox-button" onclick="handleCalcInput('5')">5</button>
+                    <button class="tox-button" onclick="handleCalcInput('6')">6</button>
+                    
+                    <button class="tox-button" onclick="handleCalcInput('1')">1</button>
+                    <button class="tox-button" onclick="handleCalcInput('2')">2</button>
+                    <button class="tox-button" onclick="handleCalcInput('3')">3</button>
+                    <button class="tox-button" style="grid-row: span 2; background-color: #10b981; color: white;" onclick="handleCalcInput('Enter')">=</button>
+
+                    <button class="tox-button col-span-2" style="grid-column: span 2;" onclick="handleCalcInput('0')">0</button>
+                    <button class="tox-button" onclick="handleCalcInput('.')">.</button>
+                </div>
+            `,
+        };
+
+        editor.windowManager.open({
+            title: 'Simple Calculator',
+            body: {
+                type: 'panel',
+                items: [calculatorBody]
+            },
+            buttons: [
+                {
+                    type: 'custom',
+                    name: 'insertresult',
+                    text: 'Insert Result',
+                    buttonType: 'primary',
+                    onAction: function(api) {
+                        const result = document.getElementById('calc-display').value;
+                        if (result !== 'Error') {
+                            // Insert the result, formatted as bold text for visibility
+                            editor.insertContent(`<strong>${result}</strong>`);
+                        }
+                        api.close();
+                    }
+                },
+                {
+                    type: 'cancel',
+                    name: 'close',
+                    text: 'Close'
+                }
+            ],
+            // Set size for better appearance
+            width: 300
+        });
+    }
+
+    // TinyMCE Configuration (Includes table plugin and custom calculator button)
+    const tinymce_config = {
+        selector: '.tinymce-editor', // Target the class added only to the 'entry' field
+        height: 300,
+        menubar: false,
+        plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table help wordcount',
+        // 'table' plugin is included, and the new 'calculatorbutton' is added to the toolbar
+        toolbar: 'undo redo | formatselect | bold italic backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | removeformat | table | calculatorbutton | link | code | help',
+        content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px }',
+        
+        // Setup function to register the custom calculator button
+        setup: function(editor) {
+            editor.ui.registry.addButton('calculatorbutton', {
+                text: 'Calc',
+                icon: 'calculator', 
+                tooltip: 'Open Calculator',
+                onAction: function() {
+                    openCalculatorDialog(editor);
+                }
+            });
+        }
+    };
+
+    /**
+     * Initializes TinyMCE editors. It is safe to call this multiple times
+     * as tinymce.remove() cleans up previous instances.
+     * @param {string} selector - The CSS selector for the elements to initialize.
+     */
+    function initializeTinyMCE(selector = '.tinymce-editor') {
+        // Destroy existing editors before initializing to prevent conflicts
+        tinymce.remove(selector); 
+        
+        const currentConfig = { ...tinymce_config };
+        currentConfig.selector = selector; // Set the selector for the current initialization run
+        
+        tinymce.init(currentConfig);
+    }
+
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const formsetContainer = document.getElementById('formset-container');
+        const addButton = document.getElementById('add-item-button');
+        const totalForms = document.getElementById('id_{{ formset.prefix }}-TOTAL_FORMS');
+        const templateWrapper = document.createElement('div');
+        templateWrapper.innerHTML = document.getElementById('empty-form-template').innerHTML.trim();
+        const emptyFormTemplate = templateWrapper.innerHTML;
+
+        // 1. Initialize TinyMCE for all existing 'entry' editors on page load
+        initializeTinyMCE();
+        
+        // Function to update indices (fields are handled inside the click listener)
+        function updateElementIndex(el, prefix, index) {
+            const idRegex = new RegExp('(' + prefix + '-\\d+|' + prefix + '-__prefix__)', 'g');
+            const nameRegex = new RegExp('(' + prefix + '-\\d+|' + prefix + '-__prefix__)', 'g');
+
+            if (el.getAttribute('for')) el.setAttribute('for', el.getAttribute('for').replace(idRegex, prefix + '-' + index));
+            if (el.id) el.id = el.id.replace(idRegex, prefix + '-' + index);
+            if (el.name) el.name = el.name.replace(nameRegex, prefix + '-' + index);
+            
+            if (el.classList.contains('formset-item')) {
+                el.setAttribute('data-form-index', index);
+            }
+        }
+
+        // 2. Add button handler
+        addButton.addEventListener('click', function() {
+            const currentCount = parseInt(totalForms.value);
+            
+            // Generate new form HTML, replacing '__prefix__' with the current index
+            const newFormHtml = emptyFormTemplate.replace(/__prefix__/g, currentCount);
+            const newFormWrapper = document.createElement('div');
+            newFormWrapper.innerHTML = newFormHtml;
+            const addedForm = newFormWrapper.firstChild;
+            
+            // Append the new form
+            formsetContainer.appendChild(addedForm);
+
+            // Re-index all elements within the new form
+            addedForm.querySelectorAll('*').forEach(function(element) {
+                updateElementIndex(element, '{{ formset.prefix }}', currentCount);
+            });
+            
+            // Attach event listener to the new remove button
+            attachRemoveListener(addedForm);
+
+            // 3. Initialize TinyMCE for the newly added form's 'entry' textarea
+            // We specifically target the textarea inside the new form item that has the 'tinymce-editor' class
+            const newEditorId = addedForm.querySelector('.tinymce-editor')?.id;
+            if (newEditorId) {
+                 initializeTinyMCE(`#${newEditorId}`);
+            } else {
+                initializeTinyMCE(); 
+            }
+
+            // Increment the TOTAL_FORMS management field
+            totalForms.value = currentCount + 1;
+        });
+
+        // 4. Deletion logic
+        function attachRemoveListener(form) {
+            const deleteBtn = form.querySelector('.remove-form-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', function() {
+                    const formItem = this.closest('.formset-item');
+                    if (formItem) {
+                        const deleteInput = formItem.querySelector('input[name$="-DELETE"][type="hidden"]');
+                        if (deleteInput) {
+                            const hasId = formItem.querySelector('input[name$="-id"]')?.value;
+
+                            if (hasId) {
+                                // Existing form: Toggle deletion status
+                                if (deleteInput.value === 'on') {
+                                    deleteInput.value = ''; // Undo deletion
+                                    formItem.classList.remove('opacity-50', 'line-through');
+                                    formItem.style.pointerEvents = 'auto';
+                                    this.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline mr-1 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Remove Entry';
+                                    this.classList.replace('text-green-600', 'text-red-600');
+                                    this.classList.replace('hover:bg-green-50', 'hover:bg-red-50');
+                                    this.classList.replace('hover:text-green-800', 'hover:text-red-800');
+
+                                } else {
+                                    deleteInput.value = 'on'; // Mark for deletion
+                                    formItem.classList.add('opacity-50', 'line-through');
+                                    formItem.style.pointerEvents = 'none';
+                                    this.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline mr-1 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Entry Removed (Undo?)';
+                                    this.classList.replace('text-red-600', 'text-green-600');
+                                    this.classList.replace('hover:bg-red-50', 'hover:bg-green-50');
+                                    this.classList.replace('hover:text-red-800', 'hover:text-green-800');
+                                }
+
+                            } else {
+                                // Newly added form: Remove it completely from the DOM
+                                const editorId = formItem.querySelector('textarea.tinymce-editor')?.id;
+                                if (editorId) {
+                                    // Make sure to remove the TinyMCE instance before removing the element
+                                    tinymce.EditorManager.execCommand('mceRemoveEditor', false, editorId);
+                                }
+                                
+                                formItem.remove();
+                                const currentCount = parseInt(totalForms.value);
+                                totalForms.value = currentCount - 1;
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Attach listeners to existing forms on load
+        document.querySelectorAll('.formset-item').forEach(attachRemoveListener);
+    });
+</script>
+
+{% endblock content %}

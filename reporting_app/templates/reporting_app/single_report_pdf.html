@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Weekly Report #{{ report.pk }}</title>
+    <style>
+        @page {
+        margin: 2.5cm;
+        }
+        body { font-family: sans-serif; }
+        h1 { color: #1e40af; border-bottom: 3px solid #bfdbfe; padding-bottom: 10px; }
+        .metadata { margin-bottom: 20px; padding: 10px; background-color: #f3f4f6; border-radius: 5px; }
+        .metadata p { margin: 5px 0; font-size: 11pt; }
+        .content-area h2 { color: #374151; border-left: 5px solid #60a5fa; padding-left: 10px; }
+        .content-body { line-height: 1.6; font-size: 11pt; }
+        .content-body img {max-width: 100% !important; height: auto !important; display: block; box-sizing: border-box;}
+        .content-body table {width: 80%; table-layout: fixed; border-collapse: collapse; margin: 15px 0;}
+        .content-body th, 
+        .content-body td {border: 1px solid #0c0c0c; padding: 10px; text-align: left; word-wrap: break-word; overflow-wrap: break-word;}
+        .content-body th {background-color: #f2f2f2; font-weight: bold;}
+        .green { background-color: #d4edda; }
+        .amber { background-color: #fff3cd; }
+        .risk { background-color: #f8d7da; }
+
+    </style>
+</head>
+<body>
+    <h1>Weekly Report Submission #{{ report.pk }}</h1>
+
+    <div class="metadata">
+        <p><strong>Supervisor:</strong> {{ supervisor_name }}</p>
+        <p><strong>Project:</strong> {{ project_name }}</p>
+        <p><strong>Status:</strong> {{ report.get_status_display }}</p>
+        <p><strong>Date Submitted:</strong> {{ report.submission_timestamp|date:"j F Y, H:i"|default:"N/A" }}</p>
+        <p><strong>PDF Generated:</strong> {{ date_generated|date:"j F Y, H:i" }}</p>
+    </div>
+
+    <div class="content-area">
+        <h2>Report Content</h2>
+        <div class="content-body">
+            {% if report.contents.exists %}
+                {% for content in report.contents.all %}
+                    <div class="content {{ content.category|lower }}">
+                        <h3>{{ content.category }}</h3>
+                        {{ content.entry|safe }}
+                        {% if content.manager_comment %}
+                            <p><strong>Manager Comment:</strong> {{ content.manager_comment }}</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p>No report content available.</p>
+            {% endif %}
+        </div>
+    </div>
+    
+</body>
+</html>

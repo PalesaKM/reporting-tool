@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    
+    <!-- HEADER and CSV EXPORT BUTTON -->
+    <header>
+        <h1 class="text-4xl font-extrabold mb-4 text-gray-900 text-center">Manager Dashboard</h1>
+        <p class="text-xl text-center text-gray-600 mb-8">
+            Welcome, {{ user.first_name|default:user.username }}. Here is a summary of your management responsibilities.
+        </p>
+            
+            <!-- Export Button: Sends a GET request with '?export=csv' to the view -->
+            <div class="flex flex-wrap justify-center gap-4 mb-6">
+            <a href="{% url 'manager_dashboard' %}?export=csv"
+               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition duration-150 ease-in-out">
+                <svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 11.586V3a1 1 0 112 0v8.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+                Download Report Summary (CSV)
+            </a>
+            <a href="{% url 'manager_daily_reports' %}"
+               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700 transition duration-150 ease-in-out">
+                View Admin Daily Reports
+            </a>
+            </div>
+    </header>
+
+    <!-- KEY METRICS CARDS -->
+    <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
+        <!-- Metric 1: Supervisors Managed Count (The requested feature) -->
+        <div class="bg-white p-6 rounded-xl shadow-xl border-l-4 border-indigo-600">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500 uppercase tracking-wider">Supervisors Managed</p>
+                    <!-- Displaying the count from the M2M relationship -->
+                    <p class="text-4xl font-bold text-gray-900 mt-1">
+                        {{ manager_profile.supervisor.count }}
+                    </p>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow-lg rounded-lg border-l-4 border-indigo-500">
+            <div class="p-5">
+                <dl>
+                    <dt class="text-sm font-medium text-gray-500 truncate">Total Reports (All Statuses)</dt>
+                    <dd class="mt-1">
+                        <div class="text-3xl font-bold text-gray-900">{{ all_reports.count|default:0 }}</div>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow-lg rounded-lg border-l-4 border-green-500">
+            <div class="p-5">
+                <dl>
+                    <dt class="text-sm font-medium text-gray-500 truncate">Reports Awaiting Review</dt>
+                    <dd class="mt-1">
+                        <div class="text-3xl font-bold text-gray-900">{{ reports_awaiting_review.count|default:0 }}</div>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow-lg rounded-lg border-l-4 border-yellow-500">
+            <div class="p-5">
+                <dl>
+                    <dt class="text-sm font-medium text-gray-500 truncate">Reports in Draft/Rework</dt>
+                    <dd class="mt-1">
+                        <div class="text-3xl font-bold text-gray-900">{{ reports_draft_or_rework.count|default:0 }}</div>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    {% if pending_extension_requests %}
+        <section class="mt-10">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">Extension Requests Pending</h2>
+            <div class="bg-white shadow-lg rounded-lg p-6">
+                <ul class="divide-y divide-gray-200">
+                    {% for req in pending_extension_requests %}
+                        <li class="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                            <div class="text-sm text-gray-700">
+                                <span class="font-semibold">{{ req.supervisor }}</span>
+                                requested until <span class="font-semibold">{{ req.requested_until|date:"M d, Y P" }}</span>
+                                {% if req.report %} (Report #{{ req.report.pk }}){% endif %}
+                            </div>
+                            <a href="{% url 'manager_extension_requests' %}" class="mt-2 sm:mt-0 text-sm font-medium text-indigo-600 hover:text-indigo-800">
+                                Review
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </section>
+    {% endif %}
+    
+    <!-- Timeliness Key -->
+    <h2 class="text-2xl font-bold text-gray-900 mb-4 mt-8">Report Timeliness Overview</h2>
+    <div class="p-3 bg-gray-50 rounded-lg mb-6 text-sm shadow-inner flex flex-wrap gap-4">
+        <p class="text-gray-600 font-medium">Timeliness Key:</p>
+        <p><span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-1"></span><span class="text-green-600 font-semibold">Well Before Deadline</span>   </p>
+        <p><span class="inline-block w-3 h-3 rounded-full bg-yellow-500 mr-1"></span><span class="text-yellow-600 font-semibold">Close to Deadline</span>   </p>
+        <p><span class="inline-block w-3 h-3 rounded-full bg-red-500 mr-1"></span><span class="text-red-600 font-semibold">Missed Deadline</span></p>
+    </div>
+
+    <!-- TABLE: All Reports with Timeliness Indicator (uses reports_data) -->
+    {% if reports_data %}
+        <div class="shadow overflow-hidden border-b border-gray-200 sm:rounded-lg">
+            <div class="max-h-96 overflow-y-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Report ID
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Supervisor
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Download
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Deadline
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Submission Time
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Timeliness
+                        </th>
+                        <th scope="col" class="relative px-6 py-3">
+                            <span class="sr-only">View</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for data in reports_data %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                            {% if data.report %}
+        <!-- Link to the report detail if the report object exists -->
+                                <a 
+                                    href="{% url 'report_detail' pk=data.report.pk %}" 
+                                    class="text-blue-600 hover:text-blue-800 font-medium"
+                                >
+                                    View Report (ID: {{ data.report.pk }})
+                                 </a>
+                                    
+                            {% else %}
+                                <!-- Display a placeholder message if the report is missing -->
+                                <span class="text-red-600 font-semibold">
+                                    {{ data.status_text }}
+                                </span>
+                            {% endif %}
+                                                        
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {{ data.supervisor_name }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {% if data.report %}
+                                <a href="{% url 'download_single_report' pk=data.report.pk %}"
+                                    class="text-red-600 hover:text-red-900 inline-flex items-center"
+                                    title="Download Full Report PDF">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm8 10a1 1 0 100-2h3a1 1 0 100 2h-3zm-3 0a1 1 0 100-2h3a1 1 0 100 2h-3zm-4 0a1 1 0 100-2h3a1 1 0 100 2H5z" clip-rule="evenodd" />
+                                    </svg>
+                                    PDF
+                                </a>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            {% if data.report %}
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                    {% if data.report.status == 'Submitted' %}bg-indigo-100 text-indigo-800
+                                    {% elif data.report.status == 'Rework' %}bg-yellow-100 text-yellow-800
+                                    {% elif data.report.status == 'Approved' %}bg-green-100 text-green-800
+                                    {% else %}bg-gray-100 text-gray-800
+                                    {% endif %}">
+                                    {{ data.report.get_status_display }}
+                                </span>
+                            {% else %}
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                                    {{ data.status_text }}
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {% if data.due_datetime %}
+                                {{ data.due_datetime|date:"M d, Y P" }}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {% if data.submission_time and data.submission_time != 'N/A' %}
+                                {{ data.submission_time|date:"M d, Y P" }}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <!-- Timeliness Badge based on Python logic -->
+                            {% if data.report and data.report.status == 'Submitted' %}
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                    {% if data.status_color == 'green' %}bg-green-100 text-green-800
+                                    {% elif data.status_color == 'orange' %}bg-yellow-100 text-yellow-800
+                                    {% elif data.status_color == 'red' %}bg-red-100 text-red-800
+                                    {% elif data.status_color == 'blue' %}bg-blue-100 text-blue-800
+                                    {% else %}bg-gray-100 text-gray-800
+                                    {% endif %}">
+                                    {{ data.status_text }}
+                                </span>
+                            {% else %}
+                                <span class="text-gray-500 text-xs italic">{{ data.status_text|default:"N/A (Not Submitted)" }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            {% if data.report %}
+        
+                                {% if data.report.status == 'Submitted' %}
+                                    <form method="post" action="{% url 'manager_dashboard' %}" class="flex space-x-2 justify-end items-center">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="report_pk" value="{{data.report.pk}}">
+                
+                                        <button type="submit" name="action" value="approve"
+                                            class="px-3 py-1 text-xs font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 transition duration-150 ease-in-out">
+                                            Approve
+                                        </button>
+                                        <button type="submit" name="action" value="reject"
+                                            class="px-3 py-1 text-xs font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 transition duration-150 ease-in-out">
+                                            Reject
+                                        </button>
+                                    </form>
+                                {% endif %}
+        
+                                {% if data.report.status not in approved_waived_draft %}
+                                    <form method="post" action="{% url 'manager_dashboard' %}" class="flex space-x-2 justify-end items-center {% if data.report.status == 'Submitted' %}mt-2{% endif %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="report_pk" value="{{data.report.pk}}">
+                                        
+                                        <button type="submit" name="action" value="override"
+                                                onclick="return confirm('WARNING: This will mark the report as KPI Waived due to external factors. Continue?')"
+                                                class="px-3 py-1 text-xs font-medium rounded-md shadow-sm text-white bg-orange-500 hover:bg-orange-600 transition duration-150 ease-in-out">
+                                            Override
+                                        </button>
+                                    </form>
+                                {% endif %}
+
+                                {% if data.report.status in approved_waived_draft %}
+                                    <a href="{% url 'report_detail' pk=data.report.pk %}" class="text-indigo-600 hover:text-indigo-900">
+                                        View &rarr;
+                                    </a>
+                                {% endif %}
+                                
+                            {% else %}
+                                <span class="text-gray-400">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+    {% else %}
+        <div class="bg-white p-6 rounded-lg shadow-md text-center border-t-4 border-indigo-500 mt-6">
+            <p class="mt-1 text-sm text-gray-500">No reports found for your supervised team.</p>
+        </div>
+    {% endif %}
+
+    <!-- CHARTS SECTION -->
+    <div class="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        <!-- Chart 1: Report Status Distribution -->
+        <div class="bg-white shadow-lg rounded-lg p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Distribution by Status</h2>
+            <div class="h-80">
+                <canvas id="reportStatusChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Chart 2: Reports Awaiting Review Summary -->
+        <div class="bg-white shadow-lg rounded-lg p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Reports Awaiting Review</h2>
+            <div class="h-80 flex items-center justify-center bg-red-50 rounded-lg">
+                <div class="text-red-700 text-3xl font-extrabold">{{ reports_awaiting_review.count|default:0 }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- REPORTS AWAITING REVIEW LIST -->
+    <section class="mt-10 mb-10">
+        <h2 class="text-2xl font-bold text-gray-800 border-b pb-2 mb-4">Reports Awaiting Your Review ({{ reports_awaiting_review.count|default:0 }})</h2>
+        
+        {% if reports_awaiting_review %}
+            <div class="bg-white shadow-xl rounded-lg overflow-hidden">
+                <ul role="list" class="divide-y divide-gray-200">
+                    {% for report in reports_awaiting_review %}
+                        <li class="p-4 sm:p-6 hover:bg-gray-50 transition duration-150 flex justify-between items-center">
+                            <div>
+                                <a href="{% url 'report_detail' report.pk %}" class="text-xl font-semibold text-indigo-600 hover:text-indigo-800 transition duration-150">
+                                    Weekly Report #{{ report.pk }}
+                                </a>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    <!-- FIX: Changed 'or' operator to '|default' filter to resolve TemplateSyntaxError -->
+                                    Supervisor: <span class="font-medium text-gray-700">{{ report.supervisor.user.get_full_name|default:report.supervisor.user.username }}</span> | 
+                                    Submission Date: <span class="font-medium text-gray-700">{{ report.submission_timestamp|date:"M d, Y P" }}</span>
+                                </p>
+                            </div>
+                            <div class="flex items-center space-x-4">
+                                <span class="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                                    {{ report.get_status_display }}
+                                </span>
+                                <a href="{% url 'report_detail' report.pk %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-900">
+                                    Review Details &rarr;
+                                </a>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% else %}
+            <div class="text-center p-6 bg-green-50 rounded-lg border border-green-200 text-green-700">
+                <p class="font-semibold">All clear!</p>
+                <p class="text-sm">There are no reports currently submitted and awaiting your review.</p>
+            </div>
+        {% endif %}
+    </section>
+</div>
+
+<!-- Chart.js Library -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+<script>
+    // Access the JSON data passed from the Django view
+    const rawData = JSON.parse('{{ reports_by_status_json|escapejs }}');
+
+    // Chart Configuration for Report Status
+    const statusCtx = document.getElementById('reportStatusChart').getContext('2d');
+    
+    new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+            labels: rawData.labels,
+            datasets: [{
+                data: rawData.counts,
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.7)', // Red for Draft/Rejected
+                    'rgba(54, 162, 235, 0.7)', // Blue for Submitted
+                    'rgba(75, 192, 192, 0.7)', // Green for Approved
+                    'rgba(255, 159, 64, 0.7)'  // Orange for Pending
+                ],
+                borderColor: [
+                    '#fff', '#fff', '#fff', '#fff'
+                ],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: {
+                        font: {
+                            size: 14,
+                            family: 'Inter, sans-serif'
+                        },
+                        boxWidth: 15,
+                        padding: 20
+                    }
+                },
+                title: {
+                    display: false,
+                },
+            },
+        }
+    });
+
+</script>
+{% endblock content %}
