@@ -24,7 +24,7 @@ SECRET_KEY = "django-insecure-#cnpg=&8)u6ubw*asj)hqe$&3es521s@9*#ss%5w+c4qs9h6!p
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['10.11.4.83', '127.0.0.1', 'localhost', '[::1]', '10.11.7.221', 'https://summit-reporting-tool.onrender.com']
+ALLOWED_HOSTS = ['10.11.4.83', '127.0.0.1', 'localhost', '[::1]', '10.11.7.221', 'summit-reporting-tool.onrender.com']
 CSRF_TRUSTED_ORIGINS = [
     'http://10.11.4.83:8000',
     'http://127.0.0.1:8000',
