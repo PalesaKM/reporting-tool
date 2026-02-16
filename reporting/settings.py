@@ -22,9 +22,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-#cnpg=&8)u6ubw*asj)hqe$&3es521s@9*#ss%5w+c4qs9h6!p"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = ['10.11.4.83', '127.0.0.1', 'localhost', '[::1]', '10.11.7.221']
+ALLOWED_HOSTS = ['10.11.4.83', '127.0.0.1', 'localhost', '[::1]', '10.11.7.221', 'https://summit-reporting-tool.onrender.com']
 CSRF_TRUSTED_ORIGINS = [
     'http://10.11.4.83:8000',
     'http://127.0.0.1:8000',
@@ -134,11 +134,12 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
+    BASE_DIR / 'reporting_app' / 'static',
 ]
-STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / 'static'] 
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+STATIC_ROOT = BASE_DIR / 'staticfiles'
