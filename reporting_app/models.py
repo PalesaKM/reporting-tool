@@ -123,7 +123,13 @@ class ReportingWeek(models.Model):
     
 class SubmissionDeadline(models.Model):
     supervisor = models.ForeignKey(Supervisor, on_delete=models.CASCADE, related_name="deadlines")
-    reporting_week = models.ForeignKey(ReportingWeek, on_delete=models.CASCADE, related_name="deadlines")
+    reporting_week = models.ForeignKey(
+        ReportingWeek,
+        on_delete=models.CASCADE,
+        related_name="deadlines",
+        null=True,
+        blank=True,
+    )
     due_datetime = models.DateTimeField()
     extended_datetime = models.DateTimeField(null=True, blank=True)
 
