@@ -134,7 +134,9 @@ class SubmissionDeadline(models.Model):
     extended_datetime = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"{self.supervisor} - Week {self.reporting_week.week_number}"
+        if self.reporting_week_id:
+            return f"{self.supervisor} - Week {self.reporting_week.week_number}"
+        return f"{self.supervisor} - No reporting week assigned"
 
 class ExtensionRequest(models.Model):
     STATUS_CHOICES = [
