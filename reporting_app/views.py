@@ -462,19 +462,19 @@ def submit_report(request, report_pk=None):
     # 2. INITIALIZE MAIN FORM AND INLINE FORMSET
     # --------------------------------------------------
     report_form = WeeklyReportForm(request.POST or None, instance=report_instance)
-    content_formset = ReportContentInlineFormSet(request.POST or None, instance=report_instance)
+    formset = ReportContentInlineFormSet(request.POST or None, instance=report_instance)
 
     # --------------------------------------------------
     # 3. HANDLE POST
     # --------------------------------------------------
     if request.method == "POST":
-        if report_form.is_valid() and content_formset.is_valid():
+        if report_form.is_valid() and formset.is_valid():
             # Save the main report
             report = report_form.save()
 
             # Save formset entries
-            content_formset.instance = report
-            content_formset.save()
+            formset.instance = report
+            formset.save()
 
             # Optionally: redirect to dashboard or report detail page
             return redirect("manager_dashboard")
@@ -484,7 +484,7 @@ def submit_report(request, report_pk=None):
     # --------------------------------------------------
     context = {
         "report_form": report_form,
-        "content_formset": content_formset,
+        "formset": formset,
         "report_instance": report_instance,
     }
     return render(request, "reporting_app/submit_report.html", context)
@@ -918,6 +918,5 @@ def export_reports_csv(request):
         writer.writerow(row)
 
     return response
-
 
 

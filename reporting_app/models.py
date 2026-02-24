@@ -268,3 +268,18 @@ class DailyReportSupervisorComment(models.Model):
 
     def __str__(self):
         return f"Daily Comment by {self.supervisor} on Report {self.report.id}"
+
+class ReportSubmission(models.Model):
+    employee = models.ForeignKey(User, on_delete=models.CASCADE)
+    approver = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='approved_reports')
+    status = models.CharField(max_length=20, choices=[('approved','Approved'), ('rejected','Rejected')])
+    due_date = models.DateField()
+    submission_date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    comments = models.TextField(blank=True, null=True)
+    resubmission_flag = models.BooleanField(default=False)
+
+    @property
+    def is_late(self):
+        return self.submission_date > self.due_date

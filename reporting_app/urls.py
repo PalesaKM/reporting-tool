@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .api_views import last_30_days_reports
 
 urlpatterns = [
     path("home/", views.login_redirect, name="login_redirect"),
@@ -23,4 +24,5 @@ urlpatterns = [
     path("daily_report/<int:pk>/", views.daily_report_detail, name="daily_report_detail"),
     path("supervisor_daily_reports/", views.supervisor_daily_reports, name="supervisor_daily_reports"),
     path("supervisor_daily_report/<int:pk>/", views.supervisor_daily_report_detail, name="supervisor_daily_report_detail"),
+    path('api/reports/last-30-days/', last_30_days_reports, name='last_30_days_reports'),
 ]
