@@ -40,6 +40,7 @@ from .models import (
 from .helpers import get_effective_deadline
 from weasyprint import HTML
 from django.template.loader import render_to_string
+from . import helpers
 
 def download_single_report(request, pk):
     report = get_object_or_404(WeeklyReport, pk=pk)
@@ -108,89 +109,39 @@ def calculate_dashboard_metrics(visible_reports):
     }
     
 @login_required
-def manager_dashboard(request):
-    if not hasattr(request.user, "manager_profile"):
-        messages.error(request, "You are not authorized to view the Manager Dashboard.")
-        return redirect('supervisor_home')
-
-    manager = request.user.manager_profile
-    supervised_supervisors = manager.supervisor.all()
-    reports = WeeklyReport.objects.filter(supervisor__in=supervised_supervisors)
-    now = timezone.now()
-
-    reports_data = []
-    processed_supervisors = set()
-
-    for report in reports.order_by('-submission_timestamp', '-pk'):
-        if report.supervisor_id in processed_supervisors:
-            continue
-
-        effective_deadline = get_effective_deadline(report.supervisor)
-        submission_time = report.submission_timestamp
-
-        # Determine status color/text
-        if report.status == 'Waived':
-            color, status_text = 'blue', 'WAIVED'
-        elif report.status in ['Submitted', 'Reviewed', 'Approved', 'Rejected'] and submission_time:
-            if effective_deadline:
-                one_hour_before = effective_deadline - timedelta(hours=1)
-                if submission_time > effective_deadline:
-                    color, status_text = 'red', 'Missed Deadline'
-                elif submission_time > one_hour_before:
-                    color, status_text = 'orange', 'Close to Deadline'
-                else:
-                    color, status_text = 'green', 'Well Before'
-            else:
-                color, status_text = 'gray', report.get_status_display()
-        else:
-            if effective_deadline and effective_deadline < now:
-                color, status_text = 'red', 'Missed Deadline (Not Submitted)'
-            else:
-                color, status_text = 'blue', 'Pending Deadline'
-
-        reports_data.append({
-            'report': report,
-            'supervisor_name': report.supervisor.user.get_full_name() or report.supervisor.user.username,
-            'due_datetime': effective_deadline,
-            'submission_time': submission_time or 'N/A',
-            'status_color': color,
-            'status_text': status_text
+def managers_dashboard(request):
+    try:
+        supervisor_profile = request.user.supervisor_profile
+    except Supervisor.DoesNotExist:
+        return render(request, "reporting_app/error_page.html", {
+            "message": "You are not registered as a Supervisor."
         })
 
-        processed_supervisors.add(report.supervisor_id)
+    # --------------------------------------------------
+    # 1. FETCH REPORTS
+    # --------------------------------------------------
+    # Get all reports for this supervisor using helper
+    weekly_reports = helpers.get_weekly_reports_for_supervisor(supervisor_profile)
 
-    # Add supervisors without reports
-    for supervisor in supervised_supervisors.exclude(id__in=processed_supervisors):
-        effective_deadline = get_effective_deadline(supervisor)
-        if effective_deadline and effective_deadline < now:
-            reports_data.append({
-                'report': None,
-                'supervisor_name': supervisor.user.get_full_name() or supervisor.user.username,
-                'due_datetime': effective_deadline,
-                'submission_time': 'MISSING',
-                'status_color': 'red',
-                'status_text': 'CRITICAL: Report Missing'
-            })
+    # Optional: you could also fetch reports pending approval
+    pending_reports = helpers.get_pending_reports_for_supervisor(supervisor_profile)
 
-    metrics = calculate_dashboard_metrics(reports)
-    pending_extensions = ExtensionRequest.objects.filter(supervisor__in=supervised_supervisors, status='Pending').order_by('-created_at')[:5]
+    # --------------------------------------------------
+    # 2. ADD ANY AGGREGATED DATA OR STATS
+    # --------------------------------------------------
+    # e.g., number of reports submitted, approved, rejected
+    report_stats = helpers.get_report_statistics(supervisor_profile)
 
+    # --------------------------------------------------
+    # 3. RENDER TEMPLATE
+    # --------------------------------------------------
     context = {
-        'manager_profile': manager,
-        'reports_data': reports_data,
-        'reports_awaiting_review': reports.filter(status='Submitted').order_by('-submission_timestamp'),
-        'reports_draft_or_rework': reports.filter(Q(status='Draft') | Q(status='Rework')).order_by('-submission_timestamp'),
-        'all_reports': reports.order_by('-submission_timestamp'),
-        'reports_by_status_json': json.dumps({
-            'labels': [r['status_text'] for r in reports_data],
-            'counts': [1]*len(reports_data)  # Simplified, can aggregate if needed
-        }),
-        'pending_extension_requests': pending_extensions,
-        **metrics
+        "weekly_reports": weekly_reports,
+        "pending_reports": pending_reports,
+        "report_stats": report_stats,
     }
 
-    return render(request, "reporting_app/manager_dashboard.html", context)
-
+    return render(request, "reporting_app/managers_dashboard.html", context)
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class CustomLoginView(LoginView):
     template_name = "registration/login.html"
@@ -395,104 +346,56 @@ def delete_report(request, pk):
 @login_required
 def submit_report(request, report_pk=None):
     try:
-        supervisor = request.user.supervisor_profile
+        supervisor_profile = request.user.supervisor_profile
     except Supervisor.DoesNotExist:
-        return render(request, "reporting_app/error_page.html", {"message": "You are not registered as a Supervisor."})
+        return render(request, "reporting_app/error_page.html", {
+            "message": "You are not registered as a Supervisor."
+        })
 
-    # ------------------------
-    # Load or create report
-    # ------------------------
-    report_instance = None
+    # --------------------------------------------------
+    # 1. LOAD OR INITIALIZE REPORT
+    # --------------------------------------------------
     if report_pk:
-        report_instance = get_object_or_404(WeeklyReport, pk=report_pk, supervisor=supervisor)
-        if report_instance.status == 'Submitted':
-            messages.warning(request, "This report has already been submitted and cannot be edited.")
-            return redirect('report_detail', pk=report_pk)
+        # Fetch existing report via helper
+        report_instance = helpers.get_report_by_pk(report_pk, supervisor_profile)
+        if not report_instance:
+            return render(request, "reporting_app/error_page.html", {
+                "message": "Report not found."
+            })
     else:
-        report_instance = WeeklyReport.objects.filter(supervisor=supervisor, status='Draft').first()
-        if report_instance:
-            messages.info(request, f"Resuming draft from {report_instance.submission_timestamp.strftime('%Y-%m-%d')}.")
+        # Create a new report instance via helper
+        report_instance = helpers.create_weekly_report(supervisor_profile)
 
-    # ------------------------
-    # Effective deadline
-    # ------------------------
-    effective_deadline = get_effective_deadline(supervisor)
-    now = timezone.now()
+    # --------------------------------------------------
+    # 2. INITIALIZE MAIN FORM AND INLINE FORMSET
+    # --------------------------------------------------
+    report_form = WeeklyReportForm(request.POST or None, instance=report_instance)
+    content_formset = ReportContentInlineFormSet(request.POST or None, instance=report_instance)
 
-    block_submission = effective_deadline and now > effective_deadline
-
-    # ------------------------
-    # Handle POST
-    # ------------------------
+    # --------------------------------------------------
+    # 3. HANDLE POST
+    # --------------------------------------------------
     if request.method == "POST":
-        report_form = WeeklyReportForm(request.POST, instance=report_instance)
-        formset = ReportContentInlineFormSet(request.POST, instance=report_instance)
+        if report_form.is_valid() and content_formset.is_valid():
+            # Save the main report
+            report = report_form.save()
 
-        if report_form.is_valid() and formset.is_valid():
-            if request.POST.get('action') == 'submit' and block_submission:
-                messages.error(request, "The submission deadline has passed. You can request an extension.")
-            else:
-                with transaction.atomic():
-                    report = report_form.save(commit=False)
-                    report.supervisor = supervisor
+            # Save formset entries
+            content_formset.instance = report
+            content_formset.save()
 
-                    if request.POST.get('action') == 'draft':
-                        report.status = "Draft"
-                        messages.info(request, "Report saved as draft.")
-                    else:
-                        report.status = "Submitted"
-                        report.submission_timestamp = now
-                        messages.success(request, "Report successfully submitted.")
+            # Optionally: redirect to dashboard or report detail page
+            return redirect("managers_dashboard")
 
-                    report.save()
-                    formset.instance = report
-                    formset.save()
-
-                    # Excel import handling
-                    uploaded_file = request.FILES.get('excel_file')
-                    if uploaded_file and uploaded_file.name.endswith(('.xlsx', '.xls')):
-                        try:
-                            import openpyxl
-                            workbook = openpyxl.load_workbook(uploaded_file)
-                            sheet = workbook.active
-                            for row in sheet.iter_rows(min_row=2):
-                                if len(row) < 3 or not any(cell.value for cell in row):
-                                    continue
-                                project_name = str(row[0].value or '').strip()
-                                category = str(row[1].value or '').strip()
-                                entry_text = str(row[2].value or '').strip()
-                                if not project_name or not entry_text:
-                                    continue
-                                ReportContent.objects.create(report=report, project_name=project_name, category=category, entry=entry_text)
-                            messages.info(request, "Excel content successfully processed.")
-                        except Exception as e:
-                            messages.error(request, f"Error reading Excel file: {e}")
-                    elif uploaded_file:
-                        messages.warning(request, "Unsupported file format. Use .xlsx or .xls.")
-
-                return redirect('submit_report', report_pk=report.pk) if request.POST.get('action') == 'draft' else redirect('report_success', report_pk=report.pk)
-
-        else:
-            messages.error(request, "Please correct the errors below.")
-
-    # ------------------------
-    # Handle GET
-    # ------------------------
-    else:
-        report_form = WeeklyReportForm(instance=report_instance)
-        formset = ReportContentInlineFormSet(instance=report_instance)
-
-    latest_request = ExtensionRequest.objects.filter(supervisor=supervisor).order_by("-created_at").first()
-
-    return render(request, "reporting_app/submit_report.html", {
+    # --------------------------------------------------
+    # 4. RENDER TEMPLATE
+    # --------------------------------------------------
+    context = {
         "report_form": report_form,
-        "formset": formset,
-        "report_type": "weekly",
-        "is_editing": report_instance is not None,
-        "latest_extension_request": latest_request,
-        "extended_datetime": effective_deadline,
-        "block_submission": block_submission,
-    })
+        "content_formset": content_formset,
+        "report_instance": report_instance,
+    }
+    return render(request, "reporting_app/submit_report.html", context)
 
 
 @login_required

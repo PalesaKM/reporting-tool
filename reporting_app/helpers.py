@@ -1,25 +1,59 @@
-from django.utils import timezone
-from .models import SubmissionDeadline, ExtensionRequest
+from django.db.models import Count
+from .models import (
+    WeeklyReport,
+    ReportContent,
+    Comment,
+    Supervisor
+)
 
-def get_effective_deadline(supervisor):
+# -------------------------------
+# 1. FETCH SINGLE REPORT
+# -------------------------------
+def get_report_by_pk(report_pk, supervisor_profile):
     """
-    Returns the effective deadline datetime for a supervisor.
-    Considers both the standard deadline and any approved extension.
-    Returns None if no deadline exists.
+    Fetch a single WeeklyReport for the supervisor, or return None if not found.
     """
     try:
-        deadline = SubmissionDeadline.objects.filter(supervisor=supervisor).latest('due_datetime')
-        effective_deadline = deadline.due_datetime
-
-        # Consider the latest approved extension
-        approved_extension = ExtensionRequest.objects.filter(
-            supervisor=supervisor,
-            status="Approved"
-        ).order_by("-created_at").first()
-
-        if approved_extension and approved_extension.requested_until:
-            effective_deadline = max(effective_deadline, approved_extension.requested_until)
-
-        return effective_deadline
-    except SubmissionDeadline.DoesNotExist:
+        return WeeklyReport.objects.get(pk=report_pk, supervisor=supervisor_profile)
+    except WeeklyReport.DoesNotExist:
         return None
+
+# -------------------------------
+# 2. CREATE NEW REPORT
+# -------------------------------
+def create_weekly_report(supervisor_profile):
+    """
+    Initialize a new WeeklyReport instance for the supervisor.
+    """
+    return WeeklyReport(supervisor=supervisor_profile)
+
+# -------------------------------
+# 3. FETCH ALL REPORTS FOR SUPERVISOR
+# -------------------------------
+def get_weekly_reports_for_supervisor(supervisor_profile):
+    """
+    Return all WeeklyReports for a given supervisor, ordered by week_number descending.
+    """
+    return WeeklyReport.objects.filter(supervisor=supervisor_profile).order_by('-week_number')
+
+# -------------------------------
+# 4. FETCH PENDING REPORTS
+# -------------------------------
+def get_pending_reports_for_supervisor(supervisor_profile):
+    """
+    Return all WeeklyReports that are pending approval (status='Pending').
+    """
+    return WeeklyReport.objects.filter(supervisor=supervisor_profile, status='Pending').order_by('-week_number')
+
+# -------------------------------
+# 5. REPORT STATISTICS
+# -------------------------------
+def get_report_statistics(supervisor_profile):
+    """
+    Return counts of reports grouped by status for this supervisor.
+    Example output: {'Pending': 3, 'Approved': 5, 'Rejected': 1}
+    """
+    queryset = WeeklyReport.objects.filter(supervisor=supervisor_profile)
+    stats = queryset.values('status').annotate(count=Count('id'))
+    # Convert queryset to dictionary
+    return {item['status']: item['count'] for item in stats}
