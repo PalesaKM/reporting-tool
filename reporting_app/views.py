@@ -9,7 +9,7 @@ from django.contrib.auth.views import LoginView
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db.models import Q, Count, Avg
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 import csv
 import json
 import openpyxl
@@ -37,6 +37,7 @@ from .models import (
     DailyReport,
     ExtensionRequest,
 )
+from .helpers import get_effective_deadline
 from weasyprint import HTML
 from django.template.loader import render_to_string
 
@@ -108,244 +109,84 @@ def calculate_dashboard_metrics(visible_reports):
     
 @login_required
 def manager_dashboard(request):
-    """
-    Manager Dashboard: Displays reports submitted by the supervisors managed by the current user.
-    """
     if not hasattr(request.user, "manager_profile"):
         messages.error(request, "You are not authorized to view the Manager Dashboard.")
-        return redirect('supervisor_home') 
+        return redirect('supervisor_home')
 
-    manager_profile = request.user.manager_profile
-    dashboard_title = "Manager Reporting Dashboard"
-   
-    supervised_supervisors = manager_profile.supervisor.all() 
+    manager = request.user.manager_profile
+    supervised_supervisors = manager.supervisor.all()
+    reports = WeeklyReport.objects.filter(supervisor__in=supervised_supervisors)
+    now = timezone.now()
 
-    
-    manageable_reports = WeeklyReport.objects.filter(supervisor__in=supervised_supervisors)
-    visible_reports = manageable_reports
-    
-    reports_awaiting_review = manageable_reports.filter(status='Submitted').order_by('-submission_timestamp')
-    if request.method == "POST":
-        report_pk = request.POST.get('report_pk')
-        action = request.POST.get('action')
-        if report_pk and action in ['approve', 'reject', 'override']:
-            try:
-                report_to_review = get_object_or_404(
-                    WeeklyReport.objects.select_related('supervisor'), 
-                    pk=report_pk
-                )
-                if not manager_profile.supervisor.filter(pk=report_to_review.supervisor.pk).exists():
-                    messages.error(request, "Permission denied: You do not manage the supervisor for this report.")
-                    return redirect('manager_dashboard')
-                if action in ['approve', 'reject'] and report_to_review.status != 'Submitted':
-                    messages.warning(request, f"Report #{report_pk} cannot be reviewed. Status is already '{report_to_review.get_status_display()}' and must be 'Submitted'.")
-                    return redirect('manager_dashboard')
-                with transaction.atomic():
-                    if action == 'approve':
-                        new_status = 'Approved'
-                        messages.success(request, f"Report #{report_pk} successfully approved.")
-                    elif action == 'reject':
-                        new_status = 'Rejected'
-                        messages.warning(request, f"Report #{report_pk} rejected. Remember to check the detail view to add a comment explaining the rejection.")
-                    
-                    # --- NEW KPI OVERRIDE ACTION ---
-                    elif action == 'override':
-                        new_status = 'Waived' # Use a new status to denote exemption
-                        messages.info(request, f"Report #{report_pk} Report requirement was Waived due to external factors.")
-
-                    report_to_review.status= new_status    
-                    report_to_review.save()
-                return redirect('manager_dashboard')
-            except WeeklyReport.DoesNotExist:
-                messages.error(request, "The specified report was not found.")
-            except Exception as e:
-                messages.error(request, f"An unexpected error occurred during review: {e}")
-            return redirect('manager_dashboard')
-        
-    # Reports needing further work by supervisor
-    # Assuming the manager uses 'Rework' status for reports sent back.
-    reports_draft_or_rework = manageable_reports.filter(
-        Q(status='Draft') | Q(status='Rework') 
-    ).order_by('-submission_timestamp', 'pk')
-    
-    # All reports are needed for the bottom list (manager scope only)
-    all_reports = manageable_reports.order_by('-submission_timestamp')
-
-    metrics = calculate_dashboard_metrics(visible_reports)
-    pending_extension_requests = ExtensionRequest.objects.filter(
-        supervisor__in=supervised_supervisors,
-        status="Pending",
-    ).select_related("supervisor", "report").order_by("-created_at")[:5]
     reports_data = []
-    ON_TIME_WINDOW= timedelta(hours=1)
-    now= timezone.now()
+    processed_supervisors = set()
 
-    processed_supervisor_ids = set() 
-
-    for report in visible_reports.order_by('-submission_timestamp', '-pk'):
-        supervisor_id = report.supervisor.user.pk
-        if supervisor_id in processed_supervisor_ids:
+    for report in reports.order_by('-submission_timestamp', '-pk'):
+        if report.supervisor_id in processed_supervisors:
             continue
-        due_time= None
-        status_color= 'gray'
-        status_text = report.get_status_display() # Default display status
-        submission_time_display = 'N/A' # Default display for submission time
-        
 
-        try:
-            # Find the deadline relevant to the report (use extension if it's later)
-            deadline = SubmissionDeadline.objects.filter(supervisor=report.supervisor).latest('due_datetime')
-            if deadline.extended_datetime and deadline.due_datetime:
-                due_time = max(deadline.due_datetime, deadline.extended_datetime)
-            else:
-                due_time = deadline.extended_datetime or deadline.due_datetime
+        effective_deadline = get_effective_deadline(report.supervisor)
+        submission_time = report.submission_timestamp
 
-            is_submitted_status = report.status in ['Submitted', 'Reviewed', 'Approved', 'Rejected']
-
-            if report.status == 'Waived':
-                status_color = 'blue'
-                status_text = 'WAIVED'
-                submission_time_display = report.submission_timestamp or 'N/A'
-
-            # --- SUBMITTED/REVIEWED/APPROVED/REJECTED: use submission timestamp ---
-            elif is_submitted_status and report.submission_timestamp and due_time:
-                submission_time = report.submission_timestamp
-                submission_time_display = submission_time
-                one_hour_before = due_time - ON_TIME_WINDOW
-
-                if submission_time > due_time:
-                    status_color = 'red'
-                    status_text = 'Missed Deadline'
+        # Determine status color/text
+        if report.status == 'Waived':
+            color, status_text = 'blue', 'WAIVED'
+        elif report.status in ['Submitted', 'Reviewed', 'Approved', 'Rejected'] and submission_time:
+            if effective_deadline:
+                one_hour_before = effective_deadline - timedelta(hours=1)
+                if submission_time > effective_deadline:
+                    color, status_text = 'red', 'Missed Deadline'
                 elif submission_time > one_hour_before:
-                    status_color = 'orange'
-                    status_text = 'Close to Deadline'
+                    color, status_text = 'orange', 'Close to Deadline'
                 else:
-                    status_color = 'green'
-                    status_text = 'Well Before'
-
-            # --- DRAFT/REWORK/UNSUBMITTED: evaluate against due/extension ---
-            elif due_time:
-                if due_time >= now:
-                    status_color = 'blue'
-                    status_text = 'Pending Deadline'
-                else:
-                    status_color = 'red'
-                    status_text = 'Missed Deadline (Not Submitted)'
-
-        except SubmissionDeadline.DoesNotExist:
-            # If no deadline is set, just display the current report status
-            status_color = 'gray'
-            status_text = f'{report.get_status_display()} (No Deadline Set)'
-            submission_time_display = 'N/A'
+                    color, status_text = 'green', 'Well Before'
+            else:
+                color, status_text = 'gray', report.get_status_display()
+        else:
+            if effective_deadline and effective_deadline < now:
+                color, status_text = 'red', 'Missed Deadline (Not Submitted)'
+            else:
+                color, status_text = 'blue', 'Pending Deadline'
 
         reports_data.append({
             'report': report,
             'supervisor_name': report.supervisor.user.get_full_name() or report.supervisor.user.username,
-            'due_datetime': due_time,
-            'submission_time': submission_time_display,
-            'status_color': status_color,
-            'status_text': status_text,
+            'due_datetime': effective_deadline,
+            'submission_time': submission_time or 'N/A',
+            'status_color': color,
+            'status_text': status_text
         })
-        processed_supervisor_ids.add(supervisor_id)
 
-    all_supervisors = supervised_supervisors
+        processed_supervisors.add(report.supervisor_id)
 
-    for supervisor in all_supervisors:
-        supervisor_id = supervisor.user.pk
-        
-        
-        if supervisor_id in processed_supervisor_ids:
-            continue
-            
-        
-        try:
-            latest_deadline = SubmissionDeadline.objects.filter(supervisor=supervisor).latest('due_datetime')
-            if latest_deadline.extended_datetime and latest_deadline.due_datetime:
-                due_time = max(latest_deadline.due_datetime, latest_deadline.extended_datetime)
-            else:
-                due_time = latest_deadline.extended_datetime or latest_deadline.due_datetime
-            
-            if due_time < now:
-                
-                reports_data.append({
-                    'report': None,
-                    'supervisor_name': supervisor.user.get_full_name() or supervisor.user.username,
-                    'due_datetime': due_time,
-                    'submission_time': 'MISSING',
-                    'status_color': 'red',
-                    'status_text': 'CRITICAL: Report Missing',
-                })
-            
-        except SubmissionDeadline.DoesNotExist:
-            pass
-    
-    if request.GET.get('export') == 'csv':
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="manager_report_summary_team_{datetime.now().strftime("%Y%m%d")}.csv"'
-        
-        writer = csv.writer(response)
-        writer.writerow(['ID', 'Supervisor', 'Project', 'Status', 'Submission Date', 'Deadline', 'Timeliness'])
+    # Add supervisors without reports
+    for supervisor in supervised_supervisors.exclude(id__in=processed_supervisors):
+        effective_deadline = get_effective_deadline(supervisor)
+        if effective_deadline and effective_deadline < now:
+            reports_data.append({
+                'report': None,
+                'supervisor_name': supervisor.user.get_full_name() or supervisor.user.username,
+                'due_datetime': effective_deadline,
+                'submission_time': 'MISSING',
+                'status_color': 'red',
+                'status_text': 'CRITICAL: Report Missing'
+            })
 
-        # Loop through reports_data (already includes missing reports)
-        for data in reports_data:
-            report = data.get('report')
-            report_id = 'MISSING'
-            status_display = data['status_text']
-            submission_date = 'N/A'
-            project_name_csv = ''
-
-            if report:
-                report_id = report.pk
-                status_display = report.get_status_display()
-                submission_date = report.submission_timestamp.strftime("%Y-%m-%d %H:%M") if report.submission_timestamp else 'N/A'
-                
-                if hasattr(report, 'contents'):
-                    project_names = []
-                    for c in report.contents.all():
-                        if c.project_name:
-                            project_names.append(c.project_name)
-                        elif c.project:
-                            project_names.append(c.project.name)
-                    project_name_csv = ', '.join(project_names)
-                else:
-                    project_name_csv = ''
-
-            deadline = data['due_datetime'].strftime("%Y-%m-%d %H:%M") if data['due_datetime'] else 'N/A'
-
-            writer.writerow([
-                report_id,
-                data['supervisor_name'],
-                project_name_csv,
-                status_display,
-                submission_date,
-                deadline,
-                data['status_text']
-            ])
-
-        return response
-
-    status_counts = {}
-    for data in reports_data:
-        display_status = data['status_text']
-        status_counts[display_status] = status_counts.get(display_status, 0) + 1
-        
-    reports_by_status_json = json.dumps({
-        'labels': list(status_counts.keys()),
-        'counts': list(status_counts.values())
-    })
+    metrics = calculate_dashboard_metrics(reports)
+    pending_extensions = ExtensionRequest.objects.filter(supervisor__in=supervised_supervisors, status='Pending').order_by('-created_at')[:5]
 
     context = {
-        'manager_profile': manager_profile,
-        'is_manager_dashboard': True,
-        'reports_awaiting_review': reports_awaiting_review,
-        'reports_draft_or_rework': reports_draft_or_rework,
-        'all_reports': all_reports,
+        'manager_profile': manager,
         'reports_data': reports_data,
-        'dashboard_title': dashboard_title,
-        'reports_by_status_json': reports_by_status_json,
-        'pending_extension_requests': pending_extension_requests,
-        'approved_waived_draft': ['Approved', 'Waived', 'Draft'],
-        **metrics,
+        'reports_awaiting_review': reports.filter(status='Submitted').order_by('-submission_timestamp'),
+        'reports_draft_or_rework': reports.filter(Q(status='Draft') | Q(status='Rework')).order_by('-submission_timestamp'),
+        'all_reports': reports.order_by('-submission_timestamp'),
+        'reports_by_status_json': json.dumps({
+            'labels': [r['status_text'] for r in reports_data],
+            'counts': [1]*len(reports_data)  # Simplified, can aggregate if needed
+        }),
+        'pending_extension_requests': pending_extensions,
+        **metrics
     }
 
     return render(request, "reporting_app/manager_dashboard.html", context)
@@ -472,7 +313,22 @@ def edit_report(request, report_pk):
     
     supervisor_profile= report.supervisor
     try:
-        deadline= report.supervisor.deadline
+        today = date.today()
+        current_week = today.isocalendar()[1]
+        current_year = today.year
+        deadline = SubmissionDeadline.objects.filter(
+            supervisor=report.supervisor,
+            reporting_week__week_number=current_week,
+            reporting_week__year=current_year
+        ).first()
+
+        due_datetime = deadline.due_datetime if deadline else None
+        extended_datetime = deadline.extended_datetime if deadline else None
+
+        if extended_datetime and timezone.now() > extended_datetime:
+            return HttpResponseForbidden('The extended deadline for this report has passed.')
+        elif due_datetime and timezone.now() > due_datetime:
+            return HttpResponseForbidden("The deadline for this report has passed.")
         if deadline.extended_datetime and timezone.now()> deadline.extended_datetime:
             return HttpResponseForbidden('The extended deadline for this report has passed.')
         elif timezone.now()> deadline.due_datetime:
@@ -539,93 +395,64 @@ def delete_report(request, pk):
 @login_required
 def submit_report(request, report_pk=None):
     try:
-        supervisor_profile = request.user.supervisor_profile 
+        supervisor = request.user.supervisor_profile
     except Supervisor.DoesNotExist:
         return render(request, "reporting_app/error_page.html", {"message": "You are not registered as a Supervisor."})
 
-    # --------------------------------------------------
-    # 1. LOAD OR INITIALIZE REPORT
-    # --------------------------------------------------
+    # ------------------------
+    # Load or create report
+    # ------------------------
     report_instance = None
     if report_pk:
-        report_instance = get_object_or_404(WeeklyReport, pk=report_pk, supervisor=supervisor_profile)
+        report_instance = get_object_or_404(WeeklyReport, pk=report_pk, supervisor=supervisor)
         if report_instance.status == 'Submitted':
             messages.warning(request, "This report has already been submitted and cannot be edited.")
             return redirect('report_detail', pk=report_pk)
     else:
-        report_instance = WeeklyReport.objects.filter(supervisor=supervisor_profile, status='Draft').first()
+        report_instance = WeeklyReport.objects.filter(supervisor=supervisor, status='Draft').first()
         if report_instance:
             messages.info(request, f"Resuming draft from {report_instance.submission_timestamp.strftime('%Y-%m-%d')}.")
 
-    # --------------------------------------------------
-    # 2. DEADLINE / EXTENSION LOGIC
-    # --------------------------------------------------
-    deadline = None
-    effective_deadline = None
-    due_datetime = None
-    extended_datetime = None
-    try:
-        deadline = supervisor_profile.deadline
-        due_datetime = deadline.due_datetime
-        extended_datetime = deadline.extended_datetime
+    # ------------------------
+    # Effective deadline
+    # ------------------------
+    effective_deadline = get_effective_deadline(supervisor)
+    now = timezone.now()
 
-        approved_extension = ExtensionRequest.objects.filter(
-            supervisor=supervisor_profile,
-            status="Approved"
-        ).order_by("-created_at").first()
+    block_submission = effective_deadline and now > effective_deadline
 
-        effective_deadline = approved_extension.requested_until if approved_extension and approved_extension.requested_until else deadline.due_datetime
-
-        if request.method == 'POST' and request.POST.get('action') == 'submit' and timezone.now() > effective_deadline:
-            messages.error(request, "The submission deadline has passed. You can request an extension.")
-            report_form = WeeklyReportForm(request.POST or None, instance=report_instance)
-            formset = ReportContentInlineFormSet(request.POST or None, instance=report_instance)
-            latest_request = ExtensionRequest.objects.filter(supervisor=supervisor_profile).order_by("-created_at").first()
-            return render(request, "reporting_app/submit_report.html", {
-                "report_form": report_form,
-                "formset": formset,
-                "report_type": "weekly",
-                "is_editing": report_instance is not None,
-                "show_extension_cta": True,
-                "block_submission": True,
-                "latest_extension_request": latest_request,
-                "extension_request_url": f"{reverse('request_extension')}?report_pk={report_instance.pk}" if report_instance else reverse("request_extension"),
-                "due_datetime": due_datetime,
-                "extended_datetime": effective_deadline,
-            })
-    except SubmissionDeadline.DoesNotExist:
-        pass
-
-    # --------------------------------------------------
-    # 3. HANDLE POST (DRAFT / SUBMIT)
-    # --------------------------------------------------
+    # ------------------------
+    # Handle POST
+    # ------------------------
     if request.method == "POST":
         report_form = WeeklyReportForm(request.POST, instance=report_instance)
         formset = ReportContentInlineFormSet(request.POST, instance=report_instance)
 
         if report_form.is_valid() and formset.is_valid():
-            with transaction.atomic():
-                report = report_form.save(commit=False)
-                report.supervisor = supervisor_profile
+            if request.POST.get('action') == 'submit' and block_submission:
+                messages.error(request, "The submission deadline has passed. You can request an extension.")
+            else:
+                with transaction.atomic():
+                    report = report_form.save(commit=False)
+                    report.supervisor = supervisor
 
-                action = request.POST.get('action')
-                if action == 'draft':
-                    report.status = "Draft"
-                    messages.info(request, "Report successfully saved as a draft.")
-                else:
-                    report.status = "Submitted"
-                    report.submission_timestamp = timezone.now()
-                    messages.success(request, "Report successfully submitted.")
-                report.save()
+                    if request.POST.get('action') == 'draft':
+                        report.status = "Draft"
+                        messages.info(request, "Report saved as draft.")
+                    else:
+                        report.status = "Submitted"
+                        report.submission_timestamp = now
+                        messages.success(request, "Report successfully submitted.")
 
-                formset.instance = report
-                formset.save()
+                    report.save()
+                    formset.instance = report
+                    formset.save()
 
-                # Excel file processing
-                if 'excel_file' in request.FILES:
-                    uploaded_file = request.FILES['excel_file']
-                    if uploaded_file.name.endswith(('.xlsx', '.xls')):
+                    # Excel import handling
+                    uploaded_file = request.FILES.get('excel_file')
+                    if uploaded_file and uploaded_file.name.endswith(('.xlsx', '.xls')):
                         try:
+                            import openpyxl
                             workbook = openpyxl.load_workbook(uploaded_file)
                             sheet = workbook.active
                             for row in sheet.iter_rows(min_row=2):
@@ -637,33 +464,34 @@ def submit_report(request, report_pk=None):
                                 if not project_name or not entry_text:
                                     continue
                                 ReportContent.objects.create(report=report, project_name=project_name, category=category, entry=entry_text)
-                            messages.info(request, "Successfully processed content from your Excel file.")
+                            messages.info(request, "Excel content successfully processed.")
                         except Exception as e:
                             messages.error(request, f"Error reading Excel file: {e}")
-                    else:
-                        messages.warning(request, "Uploaded file format not supported. Use .xlsx or .xls.")
+                    elif uploaded_file:
+                        messages.warning(request, "Unsupported file format. Use .xlsx or .xls.")
 
-                # Redirects
-                return redirect('submit_report', report_pk=report.pk) if action == 'draft' else redirect('report_success', report_pk=report.pk)
+                return redirect('submit_report', report_pk=report.pk) if request.POST.get('action') == 'draft' else redirect('report_success', report_pk=report.pk)
+
         else:
             messages.error(request, "Please correct the errors below.")
 
-    # --------------------------------------------------
-    # 4. HANDLE GET (INITIAL LOAD)
-    # --------------------------------------------------
+    # ------------------------
+    # Handle GET
+    # ------------------------
     else:
         report_form = WeeklyReportForm(instance=report_instance)
         formset = ReportContentInlineFormSet(instance=report_instance)
 
-    latest_request = ExtensionRequest.objects.filter(supervisor=supervisor_profile).order_by("-created_at").first()
+    latest_request = ExtensionRequest.objects.filter(supervisor=supervisor).order_by("-created_at").first()
+
     return render(request, "reporting_app/submit_report.html", {
         "report_form": report_form,
         "formset": formset,
         "report_type": "weekly",
         "is_editing": report_instance is not None,
         "latest_extension_request": latest_request,
-        "due_datetime": due_datetime,
         "extended_datetime": effective_deadline,
+        "block_submission": block_submission,
     })
 
 
@@ -1018,3 +846,80 @@ def daily_report_detail(request, pk):
         "edit_window_remaining_seconds": edit_window_remaining_seconds,
         "edit_window_remaining_minutes": edit_window_remaining_minutes,
     })
+
+@login_required
+def export_reports_csv(request):
+    if not hasattr(request.user, "manager_profile"):
+        messages.error(request, "You are not authorized to export reports.")
+        return redirect('manager_dashboard')
+
+    manager = request.user.manager_profile
+    supervised_supervisors = manager.supervisor.all()
+    reports = WeeklyReport.objects.filter(supervisor__in=supervised_supervisors)
+    now = timezone.now()
+
+    # Prepare data using helper
+    reports_data = []
+    processed_supervisors = set()
+
+    for report in reports.order_by('-submission_timestamp', '-pk'):
+        if report.supervisor_id in processed_supervisors:
+            continue
+
+        effective_deadline = get_effective_deadline(report.supervisor)
+        submission_time = report.submission_timestamp
+
+        # Determine status text
+        if report.status == 'Waived':
+            status_text = 'WAIVED'
+        elif report.status in ['Submitted', 'Reviewed', 'Approved', 'Rejected'] and submission_time:
+            if effective_deadline:
+                one_hour_before = effective_deadline - timedelta(hours=1)
+                if submission_time > effective_deadline:
+                    status_text = 'Missed Deadline'
+                elif submission_time > one_hour_before:
+                    status_text = 'Close to Deadline'
+                else:
+                    status_text = 'Well Before'
+            else:
+                status_text = report.get_status_display()
+        else:
+            if effective_deadline and effective_deadline < now:
+                status_text = 'Missed Deadline (Not Submitted)'
+            else:
+                status_text = 'Pending Deadline'
+
+        reports_data.append({
+            'supervisor': report.supervisor.user.get_full_name() or report.supervisor.user.username,
+            'report_id': report.pk,
+            'status': status_text,
+            'due_datetime': effective_deadline.strftime("%Y-%m-%d %H:%M") if effective_deadline else 'N/A',
+            'submission_time': submission_time.strftime("%Y-%m-%d %H:%M") if submission_time else 'N/A',
+            'report_title': getattr(report, 'title', f"Weekly Report {report.pk}")
+        })
+
+        processed_supervisors.add(report.supervisor_id)
+
+    # Include supervisors without reports
+    for supervisor in supervised_supervisors.exclude(id__in=processed_supervisors):
+        effective_deadline = get_effective_deadline(supervisor)
+        if effective_deadline and effective_deadline < now:
+            reports_data.append({
+                'supervisor': supervisor.user.get_full_name() or supervisor.user.username,
+                'report_id': 'N/A',
+                'status': 'CRITICAL: Report Missing',
+                'due_datetime': effective_deadline.strftime("%Y-%m-%d %H:%M"),
+                'submission_time': 'MISSING',
+                'report_title': 'N/A'
+            })
+
+    # Create CSV
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="supervisor_reports_{now.strftime("%Y%m%d_%H%M")}.csv"'
+
+    writer = csv.DictWriter(response, fieldnames=['supervisor', 'report_id', 'report_title', 'due_datetime', 'submission_time', 'status'])
+    writer.writeheader()
+    for row in reports_data:
+        writer.writerow(row)
+
+    return response
