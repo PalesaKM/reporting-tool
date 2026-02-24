@@ -109,7 +109,7 @@ def calculate_dashboard_metrics(visible_reports):
     }
     
 @login_required
-def managers_dashboard(request):
+def manager_dashboard(request):
     try:
         supervisor_profile = request.user.supervisor_profile
     except Supervisor.DoesNotExist:
@@ -141,7 +141,7 @@ def managers_dashboard(request):
         "report_stats": report_stats,
     }
 
-    return render(request, "reporting_app/managers_dashboard.html", context)
+    return render(request, "reporting_app/manager_dashboard.html", context)
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class CustomLoginView(LoginView):
     template_name = "registration/login.html"
@@ -385,7 +385,7 @@ def submit_report(request, report_pk=None):
             content_formset.save()
 
             # Optionally: redirect to dashboard or report detail page
-            return redirect("managers_dashboard")
+            return redirect("manager_dashboard")
 
     # --------------------------------------------------
     # 4. RENDER TEMPLATE
