@@ -3,7 +3,8 @@ from .models import (
     WeeklyReport,
     ReportContent,
     Comment,
-    Supervisor
+    Supervisor,
+    SubmissionDeadline,
 )
 
 # -------------------------------
@@ -58,11 +59,16 @@ def get_report_statistics(supervisor_profile):
     # Convert queryset to dictionary
     return {item['status']: item['count'] for item in stats}
 
-def get_effective_deadline(report):
+def get_effective_deadline(supervisor):
     """
-    Returns the effective deadline for a report,
-    taking into account extensions, overrides, etc.
+    Returns the latest effective deadline for a supervisor.
+    Prefers an approved extension when present; otherwise uses the base due datetime.
     """
-    if hasattr(report, "extension") and report.extension:
-        return report.due_datetime + report.extension.delta
-    return report.due_datetime
+    deadline = SubmissionDeadline.objects.filter(
+        supervisor=supervisor
+    ).order_by("-reporting_week__year", "-reporting_week__week_number").first()
+
+    if not deadline:
+        return None
+
+    return deadline.extended_datetime or deadline.due_datetime

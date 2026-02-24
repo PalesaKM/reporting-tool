@@ -110,38 +110,130 @@ def calculate_dashboard_metrics(visible_reports):
     
 @login_required
 def manager_dashboard(request):
-    try:
-        supervisor_profile = request.user.supervisor_profile
-    except Supervisor.DoesNotExist:
-        return render(request, "reporting_app/error_page.html", {
-            "message": "You are not registered as a Supervisor."
+    if not hasattr(request.user, "manager_profile"):
+        messages.error(request, "You are not authorized to view the Manager Dashboard.")
+        return redirect("supervisor_home")
+
+    manager = request.user.manager_profile
+    supervised_supervisors = manager.supervisor.all()
+    reports = WeeklyReport.objects.filter(
+        supervisor__in=supervised_supervisors
+    ).select_related("supervisor__user")
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+        report_pk = request.POST.get("report_pk")
+        report = get_object_or_404(reports, pk=report_pk)
+
+        if action == "approve":
+            if report.status == "Submitted":
+                report.status = "Approved"
+                report.save()
+                messages.success(request, f"Report #{report.pk} approved.")
+            else:
+                messages.warning(request, f"Report #{report.pk} is not in Submitted status.")
+        elif action == "reject":
+            if report.status == "Submitted":
+                report.status = "Rejected"
+                report.save()
+                messages.warning(request, f"Report #{report.pk} rejected.")
+            else:
+                messages.warning(request, f"Report #{report.pk} is not in Submitted status.")
+        elif action == "override":
+            if report.status not in ["Approved", "Waived", "Draft"]:
+                report.status = "Waived"
+                report.save()
+                messages.success(request, f"Report #{report.pk} marked as Waived.")
+            else:
+                messages.warning(request, f"Report #{report.pk} cannot be overridden from {report.status}.")
+        else:
+            messages.error(request, "Invalid manager action.")
+
+        return redirect("manager_dashboard")
+
+    now = timezone.now()
+    reports_data = []
+    processed_supervisors = set()
+
+    for report in reports.order_by("-submission_timestamp", "-pk"):
+        if report.supervisor_id in processed_supervisors:
+            continue
+
+        deadline = SubmissionDeadline.objects.filter(
+            supervisor=report.supervisor
+        ).order_by("-reporting_week__year", "-reporting_week__week_number").first()
+        effective_deadline = None
+        if deadline:
+            effective_deadline = deadline.extended_datetime or deadline.due_datetime
+
+        submission_time = report.submission_timestamp
+
+        if report.status == "Waived":
+            color, status_text = "blue", "WAIVED"
+        elif report.status in ["Submitted", "Reviewed", "Approved", "Rejected"] and submission_time:
+            if effective_deadline:
+                one_hour_before = effective_deadline - timedelta(hours=1)
+                if submission_time > effective_deadline:
+                    color, status_text = "red", "Missed Deadline"
+                elif submission_time > one_hour_before:
+                    color, status_text = "orange", "Close to Deadline"
+                else:
+                    color, status_text = "green", "Well Before"
+            else:
+                color, status_text = "gray", report.get_status_display()
+        else:
+            if effective_deadline and effective_deadline < now:
+                color, status_text = "red", "Missed Deadline (Not Submitted)"
+            else:
+                color, status_text = "blue", "Pending Deadline"
+
+        reports_data.append({
+            "report": report,
+            "supervisor_name": report.supervisor.user.get_full_name() or report.supervisor.user.username,
+            "due_datetime": effective_deadline,
+            "submission_time": submission_time or "N/A",
+            "status_color": color,
+            "status_text": status_text,
         })
+        processed_supervisors.add(report.supervisor_id)
 
-    # --------------------------------------------------
-    # 1. FETCH REPORTS
-    # --------------------------------------------------
-    # Get all reports for this supervisor using helper
-    weekly_reports = helpers.get_weekly_reports_for_supervisor(supervisor_profile)
+    for supervisor in supervised_supervisors.exclude(id__in=processed_supervisors).select_related("user"):
+        deadline = SubmissionDeadline.objects.filter(
+            supervisor=supervisor
+        ).order_by("-reporting_week__year", "-reporting_week__week_number").first()
+        effective_deadline = None
+        if deadline:
+            effective_deadline = deadline.extended_datetime or deadline.due_datetime
 
-    # Optional: you could also fetch reports pending approval
-    pending_reports = helpers.get_pending_reports_for_supervisor(supervisor_profile)
+        if effective_deadline and effective_deadline < now:
+            reports_data.append({
+                "report": None,
+                "supervisor_name": supervisor.user.get_full_name() or supervisor.user.username,
+                "due_datetime": effective_deadline,
+                "submission_time": "MISSING",
+                "status_color": "red",
+                "status_text": "CRITICAL: Report Missing",
+            })
 
-    # --------------------------------------------------
-    # 2. ADD ANY AGGREGATED DATA OR STATS
-    # --------------------------------------------------
-    # e.g., number of reports submitted, approved, rejected
-    report_stats = helpers.get_report_statistics(supervisor_profile)
+    metrics = calculate_dashboard_metrics(reports)
+    pending_extensions = ExtensionRequest.objects.filter(
+        supervisor__in=supervised_supervisors,
+        status="Pending",
+    ).order_by("-created_at")[:5]
 
-    # --------------------------------------------------
-    # 3. RENDER TEMPLATE
-    # --------------------------------------------------
     context = {
-        "weekly_reports": weekly_reports,
-        "pending_reports": pending_reports,
-        "report_stats": report_stats,
+        "manager_profile": manager,
+        "reports_data": reports_data,
+        "reports_awaiting_review": reports.filter(status="Submitted").order_by("-submission_timestamp"),
+        "reports_draft_or_rework": reports.filter(Q(status="Draft") | Q(status="Rework")).order_by("-submission_timestamp"),
+        "all_reports": reports.order_by("-submission_timestamp"),
+        "pending_extension_requests": pending_extensions,
+        "approved_waived_draft": ["Approved", "Waived", "Draft"],
+        **metrics,
     }
 
     return render(request, "reporting_app/manager_dashboard.html", context)
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class CustomLoginView(LoginView):
     template_name = "registration/login.html"
@@ -826,3 +918,6 @@ def export_reports_csv(request):
         writer.writerow(row)
 
     return response
+
+
+
