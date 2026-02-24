@@ -57,3 +57,12 @@ def get_report_statistics(supervisor_profile):
     stats = queryset.values('status').annotate(count=Count('id'))
     # Convert queryset to dictionary
     return {item['status']: item['count'] for item in stats}
+
+def get_effective_deadline(report):
+    """
+    Returns the effective deadline for a report,
+    taking into account extensions, overrides, etc.
+    """
+    if hasattr(report, "extension") and report.extension:
+        return report.due_datetime + report.extension.delta
+    return report.due_datetime
