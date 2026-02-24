@@ -112,13 +112,23 @@ class ReportContent(models.Model):
     def __str__(self):
         return f"{self.category} - Report {self.report.id}"
 
-class SubmissionDeadline(models.Model):
-    due_datetime= models.DateTimeField(null=True, blank=True)
-    extended_datetime= models.DateTimeField(null=True, blank=True)
-    supervisor= models.OneToOneField(Supervisor, on_delete=models.CASCADE,related_name="deadline")
+class ReportingWeek(models.Model):
+    week_number = models.PositiveIntegerField()
+    year = models.PositiveIntegerField()
+    start_date = models.DateField()
+    end_date = models.DateField()
 
     def __str__(self):
-        return f"Deadline for {self.supervisor}: {self.due_datetime}"
+        return f"Week {self.week_number} - {self.year}"
+    
+class SubmissionDeadline(models.Model):
+    supervisor = models.ForeignKey(Supervisor, on_delete=models.CASCADE, related_name="deadlines")
+    reporting_week = models.ForeignKey(ReportingWeek, on_delete=models.CASCADE, related_name="deadlines")
+    due_datetime = models.DateTimeField()
+    extended_datetime = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.supervisor} - Week {self.reporting_week.week_number}"
 
 class ExtensionRequest(models.Model):
     STATUS_CHOICES = [
