@@ -54,9 +54,13 @@ def last_30_days_reports(request):
             supervisor = report.supervisor
 
             # Get all managers linked to supervisor
-            approvers = supervisor.managers.all()
-            approver_names = [f"{m.first_name} {m.last_name}" for m in approvers]
-            approver_emails = [m.email for m in approvers]
+            if report.status == "Approved":
+                approvers = supervisor.managers.all()
+                approver_names = [f"{m.first_name} {m.last_name}" for m in approvers]
+                approver_emails = [m.email for m in approvers]
+            else:
+                approver_names = []
+                approver_emails = []
 
             # Deadline & late flag
             deadline = SubmissionDeadline.objects.filter(
@@ -109,10 +113,14 @@ def last_30_days_reports(request):
         for report in daily_reports:
             supervisor = report.supervisor
 
-            approvers = supervisor.managers.all() if supervisor else []
-            approver_names = [f"{m.first_name} {m.last_name}" for m in approvers]
-            approver_emails = [m.email for m in approvers]
-
+            if report.status == "Approved" and supervisor:
+                approvers = supervisor.managers.all()
+                approver_names = [f"{m.first_name} {m.last_name}" for m in approvers]
+                approver_emails = [m.email for m in approvers]
+            else:
+                approver_names = []
+                approver_emails = []
+                
             submission_time = report.submission_timestamp
             report_date = submission_time.date()
             # Daily deadline = 4PM on submission day
