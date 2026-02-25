@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "widget_tweaks",
     "reporting_app",
+    'rest_framework',
+    "corsheaders",
 ]
 
 LOGIN_REDIRECT_URL = 'login_redirect'  
@@ -60,6 +62,7 @@ LOGOUT_REDIRECT_URL = 'login'
 LOGIN_URL = 'login'
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -68,6 +71,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    
 ]
 
 AUTHENTICATION_BACKENDS = [
@@ -166,3 +170,7 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 if os.environ.get("RENDER"):
     DEBUG = False
+
+REPORTING_API_KEY = "HBGUBIMLKGF20349jdomngf"
+
+CORS_ALLOW_ALL_ORIGINS = True
