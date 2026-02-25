@@ -6,13 +6,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .auth import APIKeyAuthentication
-from .models import (
-    WeeklyReport,
-    DailyReport,
-    SubmissionDeadline,
-    Comment,
-    DailyReportComment,
-)
+from .models import WeeklyReport, DailyReport, SubmissionDeadline, Comment, DailyReportComment
 
 
 def isoformat(dt):
@@ -48,7 +42,7 @@ def last_30_days_reports(request):
     if report_type_filter in [None, "Weekly"]:
         weekly_qs = WeeklyReport.objects.filter(
             submission_timestamp__gte=start_date
-        ).select_related("supervisor", "project").order_by("-submission_timestamp").prefetch_related('comments__manager')
+        ).select_related("supervisor").prefetch_related("supervisor__managers").order_by("-submission_timestamp")
 
         if employee_email_filter:
             weekly_qs = weekly_qs.filter(supervisor__email=employee_email_filter)
@@ -58,21 +52,21 @@ def last_30_days_reports(request):
 
         for report in weekly_reports:
             supervisor = report.supervisor
-            project = report.project
-            approver = project.manager if project else None
 
+            # Get all managers linked to supervisor
+            approvers = supervisor.managers.all()
+            approver_names = [f"{m.first_name} {m.last_name}" for m in approvers]
+            approver_emails = [m.email for m in approvers]
+
+            # Deadline & late flag
             deadline = SubmissionDeadline.objects.filter(
                 supervisor=supervisor,
                 reporting_week__week_number=report.week_number
             ).first()
+            due_datetime = deadline.extended_datetime or deadline.due_datetime if deadline else None
+            is_late = report.submission_timestamp > due_datetime if due_datetime else False
 
-            due_datetime = None
-            is_late = False
-            if deadline:
-                due_datetime = deadline.extended_datetime or deadline.due_datetime
-                if due_datetime:
-                    is_late = report.submission_timestamp > due_datetime
-
+            # Comments
             comments_qs = Comment.objects.filter(report=report)
             comments_list = [
                 {
@@ -93,8 +87,8 @@ def last_30_days_reports(request):
                 "due_datetime": isoformat(due_datetime),
                 "is_late": is_late,
                 "is_resubmission": report.status == "Rework",
-                "approver_name": f"{approver.first_name} {approver.last_name}" if approver else None,
-                "approver_email": approver.email if approver else None,
+                "approver_name": approver_names,
+                "approver_email": approver_emails,
                 "comments": comments_list,
             })
 
@@ -104,21 +98,24 @@ def last_30_days_reports(request):
     if report_type_filter in [None, "Daily"]:
         daily_qs = DailyReport.objects.filter(
             submission_timestamp__gte=start_date
-        ).select_related("admin", "project").order_by("-submission_timestamp").prefetch_related('daily_report_comments__manager')
+        ).select_related("supervisor").prefetch_related("supervisor__managers").order_by("-submission_timestamp")
 
         if employee_email_filter:
-            daily_qs = daily_qs.filter(admin__email=employee_email_filter)
+            daily_qs = daily_qs.filter(supervisor__email=employee_email_filter)
 
         total_daily = daily_qs.count()
         daily_reports = daily_qs[offset:limit]
 
         for report in daily_reports:
-            admin = report.admin
-            project = report.project
-            approver = project.manager if project else None
+            supervisor = report.supervisor
+
+            approvers = supervisor.managers.all() if supervisor else []
+            approver_names = [f"{m.first_name} {m.last_name}" for m in approvers]
+            approver_emails = [m.email for m in approvers]
 
             submission_time = report.submission_timestamp
             report_date = submission_time.date()
+            # Daily deadline = 4PM on submission day
             deadline_time = make_aware(
                 timezone.datetime(report_date.year, report_date.month, report_date.day, 16, 0, 0)
             )
@@ -137,15 +134,15 @@ def last_30_days_reports(request):
             results.append({
                 "report_type": "Daily",
                 "report_id": report.id,
-                "employee_name": f"{admin.first_name} {admin.last_name}" if admin else None,
-                "employee_email": admin.email if admin else None,
+                "employee_name": f"{supervisor.first_name} {supervisor.last_name}" if supervisor else None,
+                "employee_email": supervisor.email if supervisor else None,
                 "status": report.status,
                 "submission_timestamp": isoformat(submission_time),
                 "due_datetime": isoformat(deadline_time),
                 "is_late": is_late,
                 "is_resubmission": report.status == "Rework",
-                "approver_name": f"{approver.first_name} {approver.last_name}" if approver else None,
-                "approver_email": approver.email if approver else None,
+                "approver_name": approver_names,
+                "approver_email": approver_emails,
                 "comments": comments_list,
             })
 
