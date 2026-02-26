@@ -6,6 +6,7 @@ urlpatterns = [
     path("home/", views.login_redirect, name="login_redirect"),
     path("", views.supervisor_home, name="supervisor_home"),
     path("manager_dashboard/", views.manager_dashboard, name="manager_dashboard"),
+    path("manager_report_history/", views.manager_report_history, name="manager_report_history"),
     path("submit_report/", views.submit_report, name="submit_report"),
     path('submit_report/<int:report_pk>/', views.submit_report, name='submit_report'), 
     path("request_extension/", views.request_extension, name="request_extension"),

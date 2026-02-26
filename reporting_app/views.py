@@ -37,7 +37,15 @@ from .models import (
     DailyReport,
     ExtensionRequest,
 )
-from .helpers import get_effective_deadline
+from .helpers import (
+    ensure_reporting_week,
+    get_effective_deadline,
+)
+from .utils import (
+    send_daily_report_update_email,
+    send_extension_request_email,
+    send_report_update_email,
+)
 from weasyprint import HTML
 from django.template.loader import render_to_string
 from . import helpers
@@ -107,6 +115,22 @@ def calculate_dashboard_metrics(visible_reports):
         'avg_tasks': avg_tasks,
         'reports_by_status_json': reports_by_status_json,
     }
+
+
+def _report_iso_week_year(report):
+    """
+    Resolve ISO week/year for a report. Uses report.week_number when provided and
+    derives year from the report timestamp in local timezone.
+    """
+    base_dt = report.submission_timestamp or report.created_at or timezone.now()
+    iso = timezone.localtime(base_dt).isocalendar()
+    week = report.week_number or iso.week
+    return week, iso.year
+
+
+def _current_iso_week_year():
+    iso = timezone.localtime(timezone.now()).isocalendar()
+    return iso.week, iso.year
     
 @login_required
 def manager_dashboard(request):
@@ -129,6 +153,7 @@ def manager_dashboard(request):
             if report.status == "Submitted":
                 report.status = "Approved"
                 report.save()
+                send_report_update_email(report, "approved")
                 messages.success(request, f"Report #{report.pk} approved.")
             else:
                 messages.warning(request, f"Report #{report.pk} is not in Submitted status.")
@@ -136,6 +161,7 @@ def manager_dashboard(request):
             if report.status == "Submitted":
                 report.status = "Rejected"
                 report.save()
+                send_report_update_email(report, "rejected")
                 messages.warning(request, f"Report #{report.pk} rejected.")
             else:
                 messages.warning(request, f"Report #{report.pk} is not in Submitted status.")
@@ -143,6 +169,7 @@ def manager_dashboard(request):
             if report.status not in ["Approved", "Waived", "Draft"]:
                 report.status = "Waived"
                 report.save()
+                send_report_update_email(report, "waived")
                 messages.success(request, f"Report #{report.pk} marked as Waived.")
             else:
                 messages.warning(request, f"Report #{report.pk} cannot be overridden from {report.status}.")
@@ -153,67 +180,55 @@ def manager_dashboard(request):
 
     now = timezone.now()
     reports_data = []
-    processed_supervisors = set()
+    now_iso = timezone.localtime(now).isocalendar()
+    current_week = now_iso.week
+    current_year = now_iso.year
 
-    for report in reports.order_by("-submission_timestamp", "-pk"):
-        if report.supervisor_id in processed_supervisors:
-            continue
+    for supervisor in supervised_supervisors.select_related("user"):
+        report = reports.filter(
+            supervisor=supervisor, week_number=current_week
+        ).order_by("-submission_timestamp", "-pk").first()
+        effective_deadline = get_effective_deadline(
+            supervisor, week_number=current_week, year=current_year
+        )
 
-        deadline = SubmissionDeadline.objects.filter(
-            supervisor=report.supervisor
-        ).order_by("-reporting_week__year", "-reporting_week__week_number").first()
-        effective_deadline = None
-        if deadline:
-            effective_deadline = deadline.extended_datetime or deadline.due_datetime
-
-        submission_time = report.submission_timestamp
-
-        if report.status == "Waived":
-            color, status_text = "blue", "WAIVED"
-        elif report.status in ["Submitted", "Reviewed", "Approved", "Rejected"] and submission_time:
-            if effective_deadline:
-                one_hour_before = effective_deadline - timedelta(hours=1)
-                if submission_time > effective_deadline:
-                    color, status_text = "red", "Missed Deadline"
-                elif submission_time > one_hour_before:
-                    color, status_text = "orange", "Close to Deadline"
+        if report:
+            submission_time = report.submission_timestamp
+            if report.status == "Waived":
+                color, status_text = "blue", "WAIVED"
+            elif report.status in ["Submitted", "Reviewed", "Approved", "Rejected"] and submission_time:
+                if effective_deadline:
+                    one_hour_before = effective_deadline - timedelta(hours=1)
+                    if submission_time > effective_deadline:
+                        color, status_text = "red", "Missed Deadline"
+                    elif submission_time > one_hour_before:
+                        color, status_text = "orange", "Close to Deadline"
+                    else:
+                        color, status_text = "green", "Well Before"
                 else:
-                    color, status_text = "green", "Well Before"
+                    color, status_text = "gray", report.get_status_display()
             else:
-                color, status_text = "gray", report.get_status_display()
+                if effective_deadline and effective_deadline < now:
+                    color, status_text = "red", "Missed Deadline (Not Submitted)"
+                else:
+                    color, status_text = "blue", "Pending Deadline"
         else:
+            submission_time = "MISSING"
             if effective_deadline and effective_deadline < now:
-                color, status_text = "red", "Missed Deadline (Not Submitted)"
+                color, status_text = "red", "CRITICAL: Report Missing"
             else:
-                color, status_text = "blue", "Pending Deadline"
+                color, status_text = "blue", "Pending Submission"
 
         reports_data.append({
             "report": report,
-            "supervisor_name": report.supervisor.user.get_full_name() or report.supervisor.user.username,
+            "supervisor_name": supervisor.user.get_full_name() or supervisor.user.username,
             "due_datetime": effective_deadline,
-            "submission_time": submission_time or "N/A",
+            "submission_time": submission_time,
             "status_color": color,
             "status_text": status_text,
+            "week_number": current_week,
+            "week_year": current_year,
         })
-        processed_supervisors.add(report.supervisor_id)
-
-    for supervisor in supervised_supervisors.exclude(id__in=processed_supervisors).select_related("user"):
-        deadline = SubmissionDeadline.objects.filter(
-            supervisor=supervisor
-        ).order_by("-reporting_week__year", "-reporting_week__week_number").first()
-        effective_deadline = None
-        if deadline:
-            effective_deadline = deadline.extended_datetime or deadline.due_datetime
-
-        if effective_deadline and effective_deadline < now:
-            reports_data.append({
-                "report": None,
-                "supervisor_name": supervisor.user.get_full_name() or supervisor.user.username,
-                "due_datetime": effective_deadline,
-                "submission_time": "MISSING",
-                "status_color": "red",
-                "status_text": "CRITICAL: Report Missing",
-            })
 
     metrics = calculate_dashboard_metrics(reports)
     pending_extensions = ExtensionRequest.objects.filter(
@@ -224,6 +239,8 @@ def manager_dashboard(request):
     context = {
         "manager_profile": manager,
         "reports_data": reports_data,
+        "current_week": current_week,
+        "current_year": current_year,
         "reports_awaiting_review": reports.filter(status="Submitted").order_by("-submission_timestamp"),
         "reports_draft_or_rework": reports.filter(Q(status="Draft") | Q(status="Rework")).order_by("-submission_timestamp"),
         "all_reports": reports.order_by("-submission_timestamp"),
@@ -234,9 +251,65 @@ def manager_dashboard(request):
 
     return render(request, "reporting_app/manager_dashboard.html", context)
 
+
+@login_required
+def manager_report_history(request):
+    if not hasattr(request.user, "manager_profile"):
+        messages.error(request, "You are not authorized to view report history.")
+        return redirect("supervisor_home")
+
+    manager = request.user.manager_profile
+    supervised_supervisors = manager.supervisor.all()
+    reports = (
+        WeeklyReport.objects.filter(supervisor__in=supervised_supervisors)
+        .select_related("supervisor__user")
+        .order_by("-submission_timestamp", "-pk")
+    )
+
+    history_rows = []
+    now = timezone.now()
+    for report in reports:
+        week_number, year = _report_iso_week_year(report)
+        effective_deadline = get_effective_deadline(
+            report.supervisor, week_number=week_number, year=year
+        )
+        submission_time = report.submission_timestamp
+
+        if report.status == "Waived":
+            deadline_status = "Waived"
+        elif submission_time and effective_deadline:
+            one_hour_before = effective_deadline - timedelta(hours=1)
+            if submission_time > effective_deadline:
+                deadline_status = "Missed Deadline"
+            elif submission_time > one_hour_before:
+                deadline_status = "Close to Deadline"
+            else:
+                deadline_status = "On Time"
+        elif effective_deadline and effective_deadline < now:
+            deadline_status = "Missing"
+        else:
+            deadline_status = "Pending"
+
+        history_rows.append(
+            {
+                "week_number": week_number,
+                "year": year,
+                "week_label": f"{year}-W{int(week_number):02d}",
+                "report": report,
+                "effective_deadline": effective_deadline,
+                "deadline_status": deadline_status,
+            }
+        )
+
+    context = {
+        "history_rows": history_rows,
+        "page_title": "Historical Reports",
+    }
+    return render(request, "reporting_app/manager_report_history.html", context)
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class CustomLoginView(LoginView):
-    template_name = "registration/login.html"
+    template_name = "reporting_app/login.html"
 
 @login_required
 def login_redirect(request):
@@ -313,6 +386,7 @@ def report_detail(request, pk):
                         messages.warning(request, f'Report #{pk} rejected.')
                     report_data.status = new_status
                     report_data.save()
+                    send_report_update_email(report_data, status_change_message)
 
                     return redirect("report_detail", pk=pk)
             else:
@@ -325,6 +399,7 @@ def report_detail(request, pk):
                 with transaction.atomic():
                     report_data.status= status_form.cleaned_data["status"]
                     report_data.save()
+                    send_report_update_email(report_data, f"status set to {report_data.status}")
                     messages.success(request, f"Report status updated to {report_data.status}.")
                     return redirect("report_detail", pk=pk)
             else:
@@ -355,29 +430,12 @@ def edit_report(request, report_pk):
         return HttpResponseForbidden("Edit window expired. This report can no longer be edited.")
     
     supervisor_profile= report.supervisor
-    try:
-        today = date.today()
-        current_week = today.isocalendar()[1]
-        current_year = today.year
-        deadline = SubmissionDeadline.objects.filter(
-            supervisor=report.supervisor,
-            reporting_week__week_number=current_week,
-            reporting_week__year=current_year
-        ).first()
-
-        due_datetime = deadline.due_datetime if deadline else None
-        extended_datetime = deadline.extended_datetime if deadline else None
-
-        if extended_datetime and timezone.now() > extended_datetime:
-            return HttpResponseForbidden('The extended deadline for this report has passed.')
-        elif due_datetime and timezone.now() > due_datetime:
-            return HttpResponseForbidden("The deadline for this report has passed.")
-        if deadline.extended_datetime and timezone.now()> deadline.extended_datetime:
-            return HttpResponseForbidden('The extended deadline for this report has passed.')
-        elif timezone.now()> deadline.due_datetime:
-            return HttpResponseForbidden("The deadline for this report has passed.")
-    except SubmissionDeadline.DoesNotExist:
-        pass
+    report_week, report_year = _report_iso_week_year(report)
+    effective_deadline = get_effective_deadline(
+        report.supervisor, week_number=report_week, year=report_year
+    )
+    if effective_deadline and timezone.now() > effective_deadline:
+        return HttpResponseForbidden("The deadline for this report has passed.")
     if request.method == "POST":
         report_form = WeeklyReportForm(request.POST, instance=report)
         formset = ReportContentInlineFormSet(request.POST, instance=report)
@@ -447,6 +505,8 @@ def submit_report(request, report_pk=None):
     # --------------------------------------------------
     # 1. LOAD OR INITIALIZE REPORT
     # --------------------------------------------------
+    current_week, _current_year = _current_iso_week_year()
+
     if report_pk:
         # Fetch existing report via helper
         report_instance = helpers.get_report_by_pk(report_pk, supervisor_profile)
@@ -454,9 +514,12 @@ def submit_report(request, report_pk=None):
             return render(request, "reporting_app/error_page.html", {
                 "message": "Report not found."
             })
+        if report_instance.week_number is None:
+            report_instance.week_number = current_week
     else:
         # Create a new report instance via helper
         report_instance = helpers.create_weekly_report(supervisor_profile)
+        report_instance.week_number = current_week
 
     # --------------------------------------------------
     # 2. INITIALIZE MAIN FORM AND INLINE FORMSET
@@ -469,15 +532,29 @@ def submit_report(request, report_pk=None):
     # --------------------------------------------------
     if request.method == "POST":
         if report_form.is_valid() and formset.is_valid():
+            action = request.POST.get("action")
             # Save the main report
-            report = report_form.save()
+            report = report_form.save(commit=False)
+            if report.week_number is None:
+                report.week_number = current_week
+            if action == "submit":
+                report.status = "Submitted"
+            elif action == "draft":
+                report.status = "Draft"
+            report.save()
 
             # Save formset entries
             formset.instance = report
             formset.save()
 
+            if action == "submit":
+                send_report_update_email(report, "submitted")
+                messages.success(request, f"Report #{report.pk} submitted successfully.")
+            else:
+                messages.success(request, f"Report #{report.pk} saved as draft.")
+
             # Optionally: redirect to dashboard or report detail page
-            return redirect("manager_dashboard")
+            return redirect("supervisor_home")
 
     # --------------------------------------------------
     # 4. RENDER TEMPLATE
@@ -505,7 +582,7 @@ def list_reports(request):
         supervisor_profile = request.user.supervisor_profile
         
         # 2. Query the reports, filtering by the supervisor profile and ordering by submission time
-        reports = WeeklyReport.objects.filter(supervisor=supervisor_profile).order_by('-submission_timestamp')
+        reports = WeeklyReport.objects.filter(supervisor=supervisor_profile).order_by('-week_number', '-submission_timestamp')
 
     except Supervisor.DoesNotExist:
         if hasattr(request.user, "manager_profile"):
@@ -579,6 +656,7 @@ def request_extension(request):
                 extension.report = report_instance
                 extension.status = "Pending"
                 extension.save()
+                send_extension_request_email(extension, "submitted")
             messages.success(request, "Extension request submitted. Your manager will review it.")
             return redirect("supervisor_home")
         messages.error(request, "Please correct the errors below.")
@@ -615,8 +693,20 @@ def manager_extension_requests(request):
             with transaction.atomic():
                 decision = form.save(commit=False)
                 decision.save()
+                send_extension_request_email(decision, f"marked as {decision.status}")
                 if decision.status == "Approved":
-                    deadline, _ = SubmissionDeadline.objects.get_or_create(supervisor=decision.supervisor)
+                    if decision.report:
+                        week_number, year = _report_iso_week_year(decision.report)
+                    else:
+                        iso = timezone.localtime(decision.requested_until).isocalendar()
+                        week_number, year = iso.week, iso.year
+
+                    reporting_week = ensure_reporting_week(week_number, year)
+                    deadline, _ = SubmissionDeadline.objects.get_or_create(
+                        supervisor=decision.supervisor,
+                        reporting_week=reporting_week,
+                        defaults={"due_datetime": decision.requested_until},
+                    )
                     if deadline.extended_datetime is None or decision.requested_until > deadline.extended_datetime:
                         deadline.extended_datetime = decision.requested_until
                         deadline.save()
@@ -667,6 +757,7 @@ def submit_daily_report(request, report_pk=None):
 
                 formset.instance = report
                 formset.save()
+                send_daily_report_update_email(report, "submitted")
 
             messages.success(request, "Daily report submitted.")
             return redirect("admin_dashboard")
@@ -772,6 +863,7 @@ def supervisor_daily_report_detail(request, pk):
             if status_form.is_valid():
                 with transaction.atomic():
                     status_form.save()
+                send_daily_report_update_email(report, f"status set to {report.status}")
                 messages.success(request, f"Daily report status updated to {report.status}.")
                 return redirect("supervisor_daily_report_detail", pk=pk)
             messages.error(request, "Invalid status form.")
@@ -855,68 +947,68 @@ def export_reports_csv(request):
 
     # Prepare data using helper
     reports_data = []
-    processed_supervisors = set()
+    now_iso = timezone.localtime(now).isocalendar()
+    current_week = now_iso.week
+    current_year = now_iso.year
 
-    for report in reports.order_by('-submission_timestamp', '-pk'):
-        if report.supervisor_id in processed_supervisors:
-            continue
+    for supervisor in supervised_supervisors:
+        report = reports.filter(
+            supervisor=supervisor, week_number=current_week
+        ).order_by("-submission_timestamp", "-pk").first()
+        effective_deadline = get_effective_deadline(
+            supervisor, week_number=current_week, year=current_year
+        )
 
-        effective_deadline = get_effective_deadline(report.supervisor)
-        submission_time = report.submission_timestamp
-
-        # Determine status text
-        if report.status == 'Waived':
-            status_text = 'WAIVED'
-        elif report.status in ['Submitted', 'Reviewed', 'Approved', 'Rejected'] and submission_time:
-            if effective_deadline:
-                one_hour_before = effective_deadline - timedelta(hours=1)
-                if submission_time > effective_deadline:
-                    status_text = 'Missed Deadline'
-                elif submission_time > one_hour_before:
-                    status_text = 'Close to Deadline'
+        if report:
+            submission_time = report.submission_timestamp
+            if report.status == 'Waived':
+                status_text = 'WAIVED'
+            elif report.status in ['Submitted', 'Reviewed', 'Approved', 'Rejected'] and submission_time:
+                if effective_deadline:
+                    one_hour_before = effective_deadline - timedelta(hours=1)
+                    if submission_time > effective_deadline:
+                        status_text = 'Missed Deadline'
+                    elif submission_time > one_hour_before:
+                        status_text = 'Close to Deadline'
+                    else:
+                        status_text = 'Well Before'
                 else:
-                    status_text = 'Well Before'
+                    status_text = report.get_status_display()
             else:
-                status_text = report.get_status_display()
+                if effective_deadline and effective_deadline < now:
+                    status_text = 'Missed Deadline (Not Submitted)'
+                else:
+                    status_text = 'Pending Deadline'
+
+            report_id = report.pk
+            report_title = getattr(report, 'title', f"Weekly Report {report.pk}")
+            submission_time_str = submission_time.strftime("%Y-%m-%d %H:%M") if submission_time else 'N/A'
         else:
+            report_id = 'N/A'
+            report_title = 'N/A'
+            submission_time_str = 'MISSING'
             if effective_deadline and effective_deadline < now:
-                status_text = 'Missed Deadline (Not Submitted)'
+                status_text = 'CRITICAL: Report Missing'
             else:
-                status_text = 'Pending Deadline'
+                status_text = 'Pending Submission'
 
         reports_data.append({
-            'supervisor': report.supervisor.user.get_full_name() or report.supervisor.user.username,
-            'report_id': report.pk,
+            'supervisor': supervisor.user.get_full_name() or supervisor.user.username,
+            'report_id': report_id,
+            'week': f"{current_year}-W{int(current_week):02d}",
             'status': status_text,
             'due_datetime': effective_deadline.strftime("%Y-%m-%d %H:%M") if effective_deadline else 'N/A',
-            'submission_time': submission_time.strftime("%Y-%m-%d %H:%M") if submission_time else 'N/A',
-            'report_title': getattr(report, 'title', f"Weekly Report {report.pk}")
+            'submission_time': submission_time_str,
+            'report_title': report_title,
         })
-
-        processed_supervisors.add(report.supervisor_id)
-
-    # Include supervisors without reports
-    for supervisor in supervised_supervisors.exclude(id__in=processed_supervisors):
-        effective_deadline = get_effective_deadline(supervisor)
-        if effective_deadline and effective_deadline < now:
-            reports_data.append({
-                'supervisor': supervisor.user.get_full_name() or supervisor.user.username,
-                'report_id': 'N/A',
-                'status': 'CRITICAL: Report Missing',
-                'due_datetime': effective_deadline.strftime("%Y-%m-%d %H:%M"),
-                'submission_time': 'MISSING',
-                'report_title': 'N/A'
-            })
 
     # Create CSV
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="supervisor_reports_{now.strftime("%Y%m%d_%H%M")}.csv"'
 
-    writer = csv.DictWriter(response, fieldnames=['supervisor', 'report_id', 'report_title', 'due_datetime', 'submission_time', 'status'])
+    writer = csv.DictWriter(response, fieldnames=['supervisor', 'week', 'report_id', 'report_title', 'due_datetime', 'submission_time', 'status'])
     writer.writeheader()
     for row in reports_data:
         writer.writerow(row)
 
     return response
-
-

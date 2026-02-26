@@ -1,0 +1,7 @@
+services:
+  - type: cron
+    name: reporting-week-bootstrap
+    env: python
+    schedule: "0 22 * * 0"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python manage.py ensure_reporting_week"

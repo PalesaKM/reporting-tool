@@ -23,7 +23,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-#cnpg=&8)u6ubw*asj)hqe$&3es521s@9*#ss%5w+c4qs9h6!p"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+# Local development defaults to DEBUG on; Render forces DEBUG off below.
+DEBUG = os.environ.get("RENDER") is None
 
 ALLOWED_HOSTS = [
     '10.11.4.83',
@@ -66,6 +67,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "reporting_app.middleware.EnsureReportingWeekMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -166,7 +168,10 @@ STATICFILES_DIRS = [
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+if DEBUG:
+    STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
+else:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 if os.environ.get("RENDER"):
     DEBUG = False

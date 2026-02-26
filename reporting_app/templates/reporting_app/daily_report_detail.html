@@ -2,12 +2,12 @@
 {% load widget_tweaks %}
 
 {% block content %}
-<div class="container mx-auto p-4 max-w-4xl">
-    <div class="bg-white shadow-xl rounded-xl p-6 mb-8 border-t-4 border-indigo-600">
+<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="bg-white shadow-xl rounded-xl p-6 mb-8 border-t-4 border-blue-600">
         <div class="flex justify-between items-start mb-4">
             <h1 class="text-3xl font-extrabold text-gray-800">Daily Report #{{ report.pk }}</h1>
             <span class="px-4 py-1 inline-flex text-sm leading-5 font-semibold rounded-full 
-                {% if report.status == 'Reviewed' %}bg-green-100 text-green-800
+                {% if report.status == 'Reviewed' %}bg-orange-100 text-orange-800
                 {% elif report.status == 'Submitted' %}bg-yellow-100 text-yellow-800
                 {% elif report.status == 'Draft' %}bg-blue-100 text-blue-800
                 {% else %}bg-gray-100 text-gray-800{% endif %}">
@@ -24,7 +24,7 @@
     </div>
 
     {% if edit_window_remaining_minutes %}
-        <div class="p-4 mb-4 text-sm text-green-800 bg-green-100 rounded-lg">
+        <div class="p-4 mb-4 text-sm text-orange-800 bg-orange-100 rounded-lg">
             This report is still editable for {{ edit_window_remaining_minutes }} minutes.
         </div>
     {% else %}
@@ -35,7 +35,7 @@
 
     {% if messages %}
         {% for message in messages %}
-            <div class="p-4 mb-4 text-sm text-indigo-700 bg-indigo-100 rounded-lg" role="alert">
+            <div class="p-4 mb-4 text-sm text-blue-700 bg-blue-100 rounded-lg" role="alert">
                 {{ message }}
             </div>
         {% endfor %}
@@ -45,7 +45,7 @@
     <div class="space-y-4">
         {% for content in report.contents.all %}
             <div class="bg-white shadow-md rounded-lg p-5 hover:shadow-lg transition duration-200">
-                <p class="text-sm font-medium text-indigo-600 uppercase mb-1">Category: {{ content.category }}</p>
+                <p class="text-sm font-medium text-blue-600 uppercase mb-1">Category: {{ content.category }}</p>
                 <p class="text-gray-700 whitespace-pre-wrap">{{ content.entry|safe }}</p>
             </div>
         {% empty %}
@@ -73,7 +73,7 @@
             {% for field in comment_form %}
                 <div class="mb-3">
                     <label class="block text-sm font-medium text-gray-700">{{ field.label_tag }}</label>
-                    {{ field|add_class:"mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" }}
+                    {{ field|add_class:"mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" }}
                 </div>
             {% endfor %}
             {% if comment_form.errors %}
@@ -81,12 +81,12 @@
                     {{ comment_form.errors }}
                 </div>
             {% endif %}
-            <button type="submit" class="w-full sm:w-auto px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300">Add Comment</button>
+            <button type="submit" class="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-300">Add Comment</button>
         </form>
     </div>
 
     <div class="mt-8 text-center">
-        <a href="{% url 'manager_daily_reports' %}" class="text-indigo-600 hover:text-indigo-800 font-medium transition duration-300">
+        <a href="{% url 'manager_daily_reports' %}" class="text-blue-600 hover:text-blue-800 font-medium transition duration-300">
             &larr; Back to Daily Reports
         </a>
     </div>

@@ -5,22 +5,25 @@
     
     <!-- HEADER and CSV EXPORT BUTTON -->
     <header>
-        <h1 class="text-4xl font-extrabold mb-4 text-gray-900 text-center">Manager Dashboard</h1>
+        <h1 class="page-title text-center">Manager Dashboard</h1>
         <p class="text-xl text-center text-gray-600 mb-8">
             Welcome, {{ user.first_name|default:user.username }}. Here is a summary of your management responsibilities.
+        </p>
+        <p class="text-center text-sm font-medium text-blue-700 mb-6">
+            Showing current cycle: Week {{ current_week }} ({{ current_year }})
         </p>
             
             <!-- Export Button: Sends a GET request with '?export=csv' to the view -->
             <div class="flex flex-wrap justify-center gap-4 mb-6">
             <a href="{% url 'manager_dashboard' %}?export=csv"
-               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition duration-150 ease-in-out">
+               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 transition duration-150 ease-in-out">
                 <svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 11.586V3a1 1 0 112 0v8.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
                 </svg>
                 Download Report Summary (CSV)
             </a>
             <a href="{% url 'manager_daily_reports' %}"
-               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700 transition duration-150 ease-in-out">
+               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 transition duration-150 ease-in-out">
                 View Admin Daily Reports
             </a>
             </div>
@@ -29,7 +32,7 @@
     <!-- KEY METRICS CARDS -->
     <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
         <!-- Metric 1: Supervisors Managed Count (The requested feature) -->
-        <div class="bg-white p-6 rounded-xl shadow-xl border-l-4 border-indigo-600">
+        <div class="bg-white p-6 rounded-xl shadow-xl border-l-4 border-blue-600">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-gray-500 uppercase tracking-wider">Supervisors Managed</p>
@@ -38,13 +41,13 @@
                         {{ manager_profile.supervisor.count }}
                     </p>
                 </div>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
             </div>
         </div>
 
-        <div class="bg-white overflow-hidden shadow-lg rounded-lg border-l-4 border-indigo-500">
+        <div class="bg-white overflow-hidden shadow-lg rounded-lg border-l-4 border-blue-500">
             <div class="p-5">
                 <dl>
                     <dt class="text-sm font-medium text-gray-500 truncate">Total Reports (All Statuses)</dt>
@@ -55,7 +58,7 @@
             </div>
         </div>
 
-        <div class="bg-white overflow-hidden shadow-lg rounded-lg border-l-4 border-green-500">
+        <div class="bg-white overflow-hidden shadow-lg rounded-lg border-l-4 border-orange-500">
             <div class="p-5">
                 <dl>
                     <dt class="text-sm font-medium text-gray-500 truncate">Reports Awaiting Review</dt>
@@ -66,7 +69,7 @@
             </div>
         </div>
 
-        <div class="bg-white overflow-hidden shadow-lg rounded-lg border-l-4 border-yellow-500">
+        <div class="bg-white overflow-hidden shadow-lg rounded-lg border-l-4 border-blue-700">
             <div class="p-5">
                 <dl>
                     <dt class="text-sm font-medium text-gray-500 truncate">Reports in Draft/Rework</dt>
@@ -90,7 +93,7 @@
                                 requested until <span class="font-semibold">{{ req.requested_until|date:"M d, Y P" }}</span>
                                 {% if req.report %} (Report #{{ req.report.pk }}){% endif %}
                             </div>
-                            <a href="{% url 'manager_extension_requests' %}" class="mt-2 sm:mt-0 text-sm font-medium text-indigo-600 hover:text-indigo-800">
+                            <a href="{% url 'manager_extension_requests' %}" class="mt-2 sm:mt-0 text-sm font-medium text-blue-600 hover:text-blue-800">
                                 Review
                             </a>
                         </li>
@@ -145,7 +148,7 @@
                 <tbody class="bg-white divide-y divide-gray-200">
                     {% for data in reports_data %}
                     <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
                             {% if data.report %}
         <!-- Link to the report detail if the report object exists -->
                                 <a 
@@ -181,7 +184,7 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm">
                             {% if data.report %}
                                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                    {% if data.report.status == 'Submitted' %}bg-indigo-100 text-indigo-800
+                                    {% if data.report.status == 'Submitted' %}bg-blue-100 text-blue-800
                                     {% elif data.report.status == 'Rework' %}bg-yellow-100 text-yellow-800
                                     {% elif data.report.status == 'Approved' %}bg-green-100 text-green-800
                                     {% else %}bg-gray-100 text-gray-800
@@ -233,7 +236,7 @@
                                         <input type="hidden" name="report_pk" value="{{data.report.pk}}">
                 
                                         <button type="submit" name="action" value="approve"
-                                            class="px-3 py-1 text-xs font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 transition duration-150 ease-in-out">
+                                            class="px-3 py-1 text-xs font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 transition duration-150 ease-in-out">
                                             Approve
                                         </button>
                                         <button type="submit" name="action" value="reject"
@@ -257,7 +260,7 @@
                                 {% endif %}
 
                                 {% if data.report.status in approved_waived_draft %}
-                                    <a href="{% url 'report_detail' pk=data.report.pk %}" class="text-indigo-600 hover:text-indigo-900">
+                                    <a href="{% url 'report_detail' pk=data.report.pk %}" class="text-blue-600 hover:text-blue-900">
                                         View &rarr;
                                     </a>
                                 {% endif %}
@@ -273,7 +276,7 @@
             </div>
         </div>
     {% else %}
-        <div class="bg-white p-6 rounded-lg shadow-md text-center border-t-4 border-indigo-500 mt-6">
+        <div class="bg-white p-6 rounded-lg shadow-md text-center border-t-4 border-blue-500 mt-6">
             <p class="mt-1 text-sm text-gray-500">No reports found for your supervised team.</p>
         </div>
     {% endif %}
@@ -292,8 +295,8 @@
         <!-- Chart 2: Reports Awaiting Review Summary -->
         <div class="bg-white shadow-lg rounded-lg p-6">
             <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Reports Awaiting Review</h2>
-            <div class="h-80 flex items-center justify-center bg-red-50 rounded-lg">
-                <div class="text-red-700 text-3xl font-extrabold">{{ reports_awaiting_review.count|default:0 }}</div>
+            <div class="h-80 flex items-center justify-center bg-orange-50 rounded-lg">
+                <div class="text-orange-700 text-3xl font-extrabold">{{ reports_awaiting_review.count|default:0 }}</div>
             </div>
         </div>
     </div>
@@ -308,7 +311,7 @@
                     {% for report in reports_awaiting_review %}
                         <li class="p-4 sm:p-6 hover:bg-gray-50 transition duration-150 flex justify-between items-center">
                             <div>
-                                <a href="{% url 'report_detail' report.pk %}" class="text-xl font-semibold text-indigo-600 hover:text-indigo-800 transition duration-150">
+                                <a href="{% url 'report_detail' report.pk %}" class="text-xl font-semibold text-blue-600 hover:text-blue-800 transition duration-150">
                                     Weekly Report #{{ report.pk }}
                                 </a>
                                 <p class="text-sm text-gray-500 mt-1">
@@ -318,10 +321,10 @@
                                 </p>
                             </div>
                             <div class="flex items-center space-x-4">
-                                <span class="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                                <span class="px-3 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">
                                     {{ report.get_status_display }}
                                 </span>
-                                <a href="{% url 'report_detail' report.pk %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-900">
+                                <a href="{% url 'report_detail' report.pk %}" class="text-sm font-medium text-blue-600 hover:text-blue-900">
                                     Review Details &rarr;
                                 </a>
                             </div>
@@ -330,7 +333,7 @@
                 </ul>
             </div>
         {% else %}
-            <div class="text-center p-6 bg-green-50 rounded-lg border border-green-200 text-green-700">
+            <div class="text-center p-6 bg-orange-50 rounded-lg border border-orange-200 text-orange-700">
                 <p class="font-semibold">All clear!</p>
                 <p class="text-sm">There are no reports currently submitted and awaiting your review.</p>
             </div>
@@ -355,10 +358,10 @@
             datasets: [{
                 data: rawData.counts,
                 backgroundColor: [
-                    'rgba(255, 99, 132, 0.7)', // Red for Draft/Rejected
-                    'rgba(54, 162, 235, 0.7)', // Blue for Submitted
-                    'rgba(75, 192, 192, 0.7)', // Green for Approved
-                    'rgba(255, 159, 64, 0.7)'  // Orange for Pending
+                    'rgba(37, 99, 235, 0.75)',  // Blue
+                    'rgba(249, 115, 22, 0.75)', // Orange
+                    'rgba(96, 165, 250, 0.75)', // Light blue
+                    'rgba(251, 146, 60, 0.75)'  // Light orange
                 ],
                 borderColor: [
                     '#fff', '#fff', '#fff', '#fff'

@@ -1,4 +1,5 @@
 from django import forms
+from django.utils import timezone
 from django.forms import inlineformset_factory
 from .models import (
     WeeklyReport,
@@ -17,13 +18,24 @@ class WeeklyReportForm(forms.ModelForm):
         fields = ["week_number"]
         
         widgets = {
-             "week_number": forms.NumberInput(attrs={"class": "form-control", "placeholder": "Week Number"}),
+             "week_number": forms.NumberInput(attrs={"class": "form-control", "placeholder": "Week Number", "readonly": "readonly"}),
              
         }
         
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        current_week = timezone.localtime(timezone.now()).isocalendar().week
+        if self.instance and self.instance.pk and self.instance.week_number:
+            self.fields["week_number"].initial = self.instance.week_number
+        else:
+            self.fields["week_number"].initial = current_week
+        self.fields["week_number"].disabled = True
+
+    def clean_week_number(self):
+        if self.instance and self.instance.pk and self.instance.week_number:
+            return self.instance.week_number
+        return timezone.localtime(timezone.now()).isocalendar().week
     
 class ReportContentForm(forms.ModelForm):
     class Meta:
